@@ -33,7 +33,6 @@ private:
     Theme currentTheme{};
 
     QWK::WidgetWindowAgent *windowAgent;
-    QWK::StyleAgent *styleAgent;
 };
 
 #endif // MAINWINDOW_H

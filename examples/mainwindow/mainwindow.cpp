@@ -8,10 +8,13 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QPushButton>
-#include <QtWidgets/QActionGroup>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#  include <QtGui/QActionGroup>
+#else
+#  include <QtWidgets/QActionGroup>
+#endif
 
 #include <QWKWidgets/widgetwindowagent.h>
-#include <QWKStyleSupport/styleagent.h>
 
 #include <widgetframe/windowbar.h>
 #include <widgetframe/windowbutton.h>
@@ -33,8 +36,6 @@ protected:
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     installWindowAgent();
-
-    styleAgent = new QWK::StyleAgent(this);
 
     auto clockWidget = new ClockWidget();
     clockWidget->setObjectName(QStringLiteral("clock-widget"));
@@ -139,36 +140,40 @@ void MainWindow::installWindowAgent() {
 #ifdef Q_OS_WIN
         auto dwmBlurAction = new QAction(tr("Enable DWM blur"), menuBar);
         dwmBlurAction->setCheckable(true);
-        connect(dwmBlurAction, &QAction::triggered, this, [this](bool checked){
-            QWindow *w = windowHandle();
-            styleAgent->setWindowAttribute(w, QStringLiteral("dwm-blur"), checked);
+        connect(dwmBlurAction, &QAction::triggered, this, [this](bool checked) {
+            if (!windowAgent->setWindowAttribute(QStringLiteral("dwm-blur"), checked)) {
+                return;
+            }
             setProperty("custom-style", checked);
             style()->polish(this);
         });
 
         auto acrylicAction = new QAction(tr("Enable acrylic material"), menuBar);
         acrylicAction->setCheckable(true);
-        connect(acrylicAction, &QAction::triggered, this, [this](bool checked){
-            QWindow *w = windowHandle();
-            styleAgent->setWindowAttribute(w, QStringLiteral("acrylic-material"), QColor());
+        connect(acrylicAction, &QAction::triggered, this, [this](bool checked) {
+            if (!windowAgent->setWindowAttribute(QStringLiteral("acrylic-material"), true)) {
+                return;
+            }
             setProperty("custom-style", checked);
             style()->polish(this);
         });
 
         auto micaAction = new QAction(tr("Enable mica"), menuBar);
         micaAction->setCheckable(true);
-        connect(micaAction, &QAction::triggered, this, [this](bool checked){
-            QWindow *w = windowHandle();
-            styleAgent->setWindowAttribute(w, QStringLiteral("mica"), checked);
+        connect(micaAction, &QAction::triggered, this, [this](bool checked) {
+            if (!windowAgent->setWindowAttribute(QStringLiteral("mica"), checked)) {
+                return;
+            }
             setProperty("custom-style", checked);
             style()->polish(this);
         });
 
         auto micaAltAction = new QAction(tr("Enable mica alt"), menuBar);
         micaAltAction->setCheckable(true);
-        connect(micaAltAction, &QAction::triggered, this, [this](bool checked){
-            QWindow *w = windowHandle();
-            styleAgent->setWindowAttribute(w, QStringLiteral("mica-alt"), checked);
+        connect(micaAltAction, &QAction::triggered, this, [this](bool checked) {
+            if (!windowAgent->setWindowAttribute(QStringLiteral("mica-alt"), checked)) {
+                return;
+            }
             setProperty("custom-style", checked);
             style()->polish(this);
         });
@@ -287,6 +292,7 @@ void MainWindow::loadStyleSheet(Theme theme) {
     if (!styleSheet().isEmpty() && theme == currentTheme)
         return;
     currentTheme = theme;
+
     if (QFile qss(theme == Dark ? QStringLiteral(":/dark-style.qss")
                                 : QStringLiteral(":/light-style.qss"));
         qss.open(QIODevice::ReadOnly | QIODevice::Text)) {

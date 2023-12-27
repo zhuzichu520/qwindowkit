@@ -9,26 +9,48 @@
 
 namespace QWK {
 
-    class WinIdChangeEventFilter : public QObject {
-    public:
-        explicit WinIdChangeEventFilter(QObject *widget, AbstractWindowContext *ctx,
-                                        QObject *parent = nullptr)
-            : QObject(parent), ctx(ctx) {
-            widget->installEventFilter(this);
-        }
+    namespace {
 
-    protected:
-        bool eventFilter(QObject *obj, QEvent *event) override {
-            Q_UNUSED(obj)
-            if (event->type() == QEvent::WinIdChange) {
-                ctx->notifyWinIdChange();
+        class WinIdChangeEventFilter : public QObject {
+        public:
+            explicit WinIdChangeEventFilter(QObject *widget, AbstractWindowContext *ctx,
+                                            QObject *parent = nullptr)
+                : QObject(parent), ctx(ctx) {
+                widget->installEventFilter(this);
             }
-            return false;
-        }
 
-    protected:
-        AbstractWindowContext *ctx;
-    };
+        protected:
+            bool eventFilter(QObject *obj, QEvent *event) override {
+                Q_UNUSED(obj)
+                if (event->type() == QEvent::WinIdChange) {
+                    ctx->notifyWinIdChange();
+                }
+                return false;
+            }
+
+        protected:
+            AbstractWindowContext *ctx;
+        };
+
+        class WindowEventFilter : public QObject {
+        public:
+            explicit WindowEventFilter(QWindow *window, AbstractWindowContext *ctx,
+                                       QObject *parent = nullptr)
+                : QObject(parent), ctx(ctx), window(window) {
+                window->installEventFilter(this);
+            }
+
+        protected:
+            bool eventFilter(QObject *obj, QEvent *event) override {
+                return ctx->sharedDispatch(obj, event);
+            }
+
+        protected:
+            AbstractWindowContext *ctx;
+            QWindow *window;
+        };
+
+    }
 
     AbstractWindowContext::AbstractWindowContext() = default;
 
@@ -45,8 +67,11 @@ namespace QWK {
         m_windowHandle = m_delegate->hostWindow(m_host);
         if (m_windowHandle) {
             winIdChanged();
+            m_windowEventFilter = std::make_unique<WindowEventFilter>(m_windowHandle, this);
         }
     }
+
+
 
     bool AbstractWindowContext::setHitTestVisible(const QObject *obj, bool visible) {
         Q_ASSERT(obj);
@@ -186,6 +211,10 @@ namespace QWK {
             }
 
             case RaiseWindowHook: {
+                if (!m_windowHandle)
+                    return;
+
+                m_delegate->setWindowVisible(m_host, true);
                 Qt::WindowStates state = m_delegate->getWindowState(m_host);
                 if (state & Qt::WindowMinimized) {
                     m_delegate->setWindowState(m_host, state & ~Qt::WindowMinimized);
@@ -218,7 +247,58 @@ namespace QWK {
         m_windowHandle = m_delegate->hostWindow(m_host);
         if (oldWindow == m_windowHandle)
             return;
+        m_windowEventFilter.reset();
         winIdChanged();
+        if (m_windowHandle) {
+            m_windowEventFilter = std::make_unique<WindowEventFilter>(m_windowHandle, this);
+
+            // Refresh window attributes
+            auto attributes = m_windowAttributes;
+            m_windowAttributes.clear();
+            for (auto it = attributes.begin(); it != attributes.end(); ++it) {
+                if (!windowAttributeChanged(it.key(), it.value(), {})) {
+                    continue;
+                }
+                m_windowAttributes.insert(it.key(), it.value());
+            }
+        }
+    }
+
+    QVariant AbstractWindowContext::windowAttribute(const QString &key) const {
+        return m_windowAttributes.value(key);
+    }
+
+    bool AbstractWindowContext::setWindowAttribute(const QString &key, const QVariant &attribute) {
+        auto it = m_windowAttributes.find(key);
+        if (it == m_windowAttributes.end()) {
+            if (!attribute.isValid()) {
+                return true;
+            }
+            if (!m_windowHandle || !windowAttributeChanged(key, attribute, {})) {
+                return false;
+            }
+            m_windowAttributes.insert(key, attribute);
+            return true;
+        }
+
+        if (it.value() == attribute)
+            return true;
+        if (!m_windowHandle || !windowAttributeChanged(key, attribute, it.value())) {
+            return false;
+        }
+
+        if (attribute.isValid()) {
+            it.value() = attribute;
+        } else {
+            m_windowAttributes.erase(it);
+        }
+        return true;
+    }
+
+    bool AbstractWindowContext::windowAttributeChanged(const QString &key,
+                                                       const QVariant &attribute,
+                                                       const QVariant &oldAttribute) {
+        return false;
     }
 
 }

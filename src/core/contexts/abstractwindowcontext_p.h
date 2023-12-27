@@ -20,11 +20,14 @@
 
 #include <QWKCore/windowagentbase.h>
 #include <QWKCore/private/nativeeventfilter_p.h>
+#include <QWKCore/private/sharedeventfilter_p.h>
 #include <QWKCore/private/windowitemdelegate_p.h>
 
 namespace QWK {
 
-    class QWK_CORE_EXPORT AbstractWindowContext : public QObject, public NativeEventDispatcher {
+    class QWK_CORE_EXPORT AbstractWindowContext : public QObject,
+                                                  public NativeEventDispatcher,
+                                                  public SharedEventDispatcher {
         Q_OBJECT
     public:
         AbstractWindowContext();
@@ -61,7 +64,8 @@ namespace QWK {
             RaiseWindowHook,
             ShowSystemMenuHook,
             DefaultColorsHook,
-            DrawWindows10BorderHook,     // Only works on Windows 10
+            DrawWindows10BorderHook,     // Only works on Windows 10, emulated workaround
+            DrawWindows10BorderHook2,    // Only works on Windows 10, native workaround
             SystemButtonAreaChangedHook, // Only works on Mac
         };
         virtual void virtual_hook(int id, void *data);
@@ -69,8 +73,13 @@ namespace QWK {
         void showSystemMenu(const QPoint &pos);
         void notifyWinIdChange();
 
+        virtual QVariant windowAttribute(const QString &key) const;
+        virtual bool setWindowAttribute(const QString &key, const QVariant &attribute);
+
     protected:
         virtual void winIdChanged() = 0;
+        virtual bool windowAttributeChanged(const QString &key, const QVariant &attribute,
+                                            const QVariant &oldAttribute);
 
     protected:
         QObject *m_host{};
@@ -83,8 +92,11 @@ namespace QWK {
 #endif
 
         QObject *m_titleBar{};
-        std::array<QObject *, WindowAgentBase::NumSystemButton> m_systemButtons{};
+        std::array<QObject *, WindowAgentBase::Close + 1> m_systemButtons{};
 
+        QVariantHash m_windowAttributes;
+
+        std::unique_ptr<QObject> m_windowEventFilter;
         std::unique_ptr<QObject> m_winIdChangeEventFilter;
     };
 

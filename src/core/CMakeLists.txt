@@ -13,6 +13,8 @@ set(_src
     windowitemdelegate.cpp
     kernel/nativeeventfilter_p.h
     kernel/nativeeventfilter.cpp
+    kernel/sharedeventfilter_p.h
+    kernel/sharedeventfilter.cpp
     shared/systemwindow_p.h
     contexts/abstractwindowcontext_p.h
     contexts/abstractwindowcontext.cpp
@@ -33,7 +35,7 @@ else()
     )
 endif()
 
-if(QWINDOWKIT_FORCE_QT_WINDOW_CONTEXT)
+if(QWINDOWKIT_ENABLE_QT_WINDOW_CONTEXT)
     list(APPEND _src
         contexts/qtwindowcontext_p.h
         contexts/qtwindowcontext.cpp
@@ -44,6 +46,7 @@ else()
             contexts/win32windowcontext_p.h
             contexts/win32windowcontext.cpp
         )
+        list(APPEND _links_private uxtheme)
     elseif(APPLE)
         list(APPEND _src
             contexts/cocoawindowcontext_p.h
@@ -62,6 +65,26 @@ else()
     endif()
 endif()
 
+set(_sync_include_options)
+
+if(QWINDOWKIT_ENABLE_STYLE_AGENT)
+    list(APPEND _src
+        style/styleagent.h
+        style/styleagent_p.h
+        style/styleagent.cpp
+    )
+
+    if(WIN32)
+        list(APPEND _src style/styleagent_win.cpp)
+    elseif(APPLE)
+        list(APPEND _src style/styleagent_mac.mm)
+    else()
+        list(APPEND _src style/styleagent_linux.cpp)
+    endif()
+else()
+    list(APPEND _sync_include_options EXCLUDE "style/\\.+")
+endif()
+
 qwk_add_library(${PROJECT_NAME} AUTOGEN
     SOURCES ${_src}
     LINKS
@@ -70,6 +93,7 @@ qwk_add_library(${PROJECT_NAME} AUTOGEN
     QT_INCLUDE_PRIVATE Core Gui
     INCLUDE_PRIVATE kernel contexts shared
     PREFIX QWK_CORE
+    SYNC_INCLUDE_OPTIONS ${_sync_include_options}
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

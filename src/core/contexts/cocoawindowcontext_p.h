@@ -25,11 +25,13 @@ namespace QWK {
 
     protected:
         void winIdChanged() override;
+        bool windowAttributeChanged(const QString &key, const QVariant &attribute,
+                                    const QVariant &oldAttribute) override;
 
     protected:
         WId windowId = 0;
 
-        std::unique_ptr<QObject> cocoaWindowEventFilter;
+        std::unique_ptr<SharedEventFilter> cocoaWindowEventFilter;
     };
 
 }

@@ -5,10 +5,10 @@
 #include <QtCore/QHash>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QTimer>
+#include <QtCore/QDateTime>
 #include <QtGui/QGuiApplication>
 #include <QtGui/QPainter>
 #include <QtGui/QPalette>
-#include <QtGui/QStyleHints>
 
 #include <QtGui/private/qhighdpiscaling_p.h>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -21,12 +21,10 @@
 #  include <QtGui/qpa/qplatformwindow_p.h>
 #endif
 
+#include <QWKCore/qwkconfig.h>
+
 #include "qwkglobal_p.h"
 #include "qwkwindowsextra_p.h"
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-Q_DECLARE_METATYPE(QMargins)
-#endif
 
 namespace QWK {
 
@@ -47,59 +45,25 @@ namespace QWK {
     // Original Qt window proc function
     static WNDPROC g_qtWindowProc = nullptr;
 
+    static inline bool
+#if !QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
+        constexpr
+#endif
+
+        isSystemBorderEnabled() {
+        return
+#if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
+            isWin10OrGreater()
+#else
+            false
+#endif
+                ;
+    }
+
     static inline void triggerFrameChange(HWND hwnd) {
         ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                        SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
                            SWP_FRAMECHANGED);
-    }
-
-    static inline quint32 getDpiForWindow(HWND hwnd) {
-        const DynamicApis &apis = DynamicApis::instance();
-        if (apis.pGetDpiForWindow) {         // Win10
-            return apis.pGetDpiForWindow(hwnd);
-        } else if (apis.pGetDpiForMonitor) { // Win8.1
-            HMONITOR monitor = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-            UINT dpiX{0};
-            UINT dpiY{0};
-            apis.pGetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
-            return dpiX;
-        } else { // Win2K
-            HDC hdc = ::GetDC(nullptr);
-            const int dpiX = ::GetDeviceCaps(hdc, LOGPIXELSX);
-            // const int dpiY = ::GetDeviceCaps(hdc, LOGPIXELSY);
-            ::ReleaseDC(nullptr, hdc);
-            return quint32(dpiX);
-        }
-    }
-
-    static inline quint32 getSystemMetricsForDpi(int index, quint32 dpi) {
-        const DynamicApis &apis = DynamicApis::instance();
-        if (apis.pGetSystemMetricsForDpi) {
-            return ::GetSystemMetricsForDpi(index, dpi);
-        }
-        return ::GetSystemMetrics(index);
-    }
-
-    static inline quint32 getWindowFrameBorderThickness(HWND hwnd) {
-        const DynamicApis &apis = DynamicApis::instance();
-        if (UINT result = 0; SUCCEEDED(apis.pDwmGetWindowAttribute(
-                hwnd, _DWMWA_VISIBLE_FRAME_BORDER_THICKNESS, &result, sizeof(result)))) {
-            return result;
-        }
-        return getSystemMetricsForDpi(SM_CXBORDER, getDpiForWindow(hwnd));
-    }
-
-    static inline quint32 getResizeBorderThickness(HWND hwnd) {
-        const quint32 dpi = getDpiForWindow(hwnd);
-        return getSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
-               getSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-    }
-
-    static inline quint32 getTitleBarHeight(HWND hwnd) {
-        const quint32 dpi = getDpiForWindow(hwnd);
-        return getSystemMetricsForDpi(SM_CYCAPTION, dpi) +
-               getSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
-               getSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
     }
 
     static void setInternalWindowFrameMargins(QWindow *window, const QMargins &margins) {
@@ -437,8 +401,8 @@ namespace QWK {
             return false;
         }
 
-        static WindowsNativeEventFilter *instance;
-        static Win32WindowContext *lastMessageContext;
+        static inline WindowsNativeEventFilter *instance = nullptr;
+        static inline Win32WindowContext *lastMessageContext = nullptr;
 
         static inline void install() {
             if (instance) {
@@ -455,9 +419,6 @@ namespace QWK {
             instance = nullptr;
         }
     };
-
-    WindowsNativeEventFilter *WindowsNativeEventFilter::instance = nullptr;
-    Win32WindowContext *WindowsNativeEventFilter::lastMessageContext = nullptr;
 
     // https://github.com/qt/qtbase/blob/e26a87f1ecc40bc8c6aa5b889fce67410a57a702/src/plugins/platforms/windows/qwindowscontext.cpp#L1025
     // We can see from the source code that Qt will filter out some messages first and then send the
@@ -546,7 +507,7 @@ namespace QWK {
     static inline void addManagedWindow(QWindow *window, HWND hWnd, Win32WindowContext *ctx) {
         const auto margins = [hWnd]() -> QMargins {
             const auto titleBarHeight = int(getTitleBarHeight(hWnd));
-            if (isWin10OrGreater()) {
+            if (isSystemBorderEnabled()) {
                 return {0, -titleBarHeight, 0, 0};
             } else {
                 const auto frameSize = int(getResizeBorderThickness(hWnd));
@@ -609,6 +570,7 @@ namespace QWK {
             case RaiseWindowHook: {
                 if (!windowId)
                     return;
+                m_delegate->setWindowVisible(m_host, true);
                 const auto hwnd = reinterpret_cast<HWND>(windowId);
                 bringWindowToFront(hwnd);
                 return;
@@ -641,6 +603,7 @@ namespace QWK {
             }
 
             case DrawWindows10BorderHook: {
+#if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
                 if (!windowId)
                     return;
 
@@ -651,7 +614,7 @@ namespace QWK {
                 const auto hwnd = reinterpret_cast<HWND>(windowId);
 
                 QPen pen;
-                pen.setWidth(getWindowFrameBorderThickness(hwnd) * 2);
+                pen.setWidth(int(getWindowFrameBorderThickness(hwnd)) * 2);
 
                 const bool dark = isDarkThemeActive() && isDarkWindowFrameEnabled(hwnd);
                 if (m_delegate->isWindowActive(m_host)) {
@@ -671,7 +634,7 @@ namespace QWK {
                 }
                 painter.save();
 
-                // We needs anti-aliasing to give us better result.
+                // We need antialiasing to give us better result.
                 painter.setRenderHint(QPainter::Antialiasing);
 
                 painter.setPen(pen);
@@ -680,6 +643,33 @@ namespace QWK {
                     QPoint{m_windowHandle->width(), 0}
                 });
                 painter.restore();
+#endif
+                return;
+            }
+
+            case DrawWindows10BorderHook2: {
+#if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
+                if (!m_windowHandle)
+                    return;
+
+                // https://github.com/microsoft/terminal/blob/71a6f26e6ece656084e87de1a528c4a8072eeabd/src/cascadia/WindowsTerminal/NonClientIslandWindow.cpp#L1025
+                // https://docs.microsoft.com/en-us/windows/win32/dwm/customframe#extending-the-client-frame
+                // Draw a black rectangle to make Windows native top border show
+
+                auto hWnd = reinterpret_cast<HWND>(windowId);
+                HDC hdc = ::GetDC(hWnd);
+                RECT windowRect{};
+                ::GetClientRect(hWnd, &windowRect);
+                RECT rcTopBorder = {
+                    0,
+                    0,
+                    RECT_WIDTH(windowRect),
+                    int(getWindowFrameBorderThickness(hWnd)),
+                };
+                ::FillRect(hdc, &rcTopBorder,
+                           reinterpret_cast<HBRUSH>(::GetStockObject(BLACK_BRUSH)));
+                ::ReleaseDC(hWnd, hdc);
+#endif
                 return;
             }
 
@@ -689,12 +679,39 @@ namespace QWK {
         AbstractWindowContext::virtual_hook(id, data);
     }
 
-    bool Win32WindowContext::needBorderPainter() const {
-        return isWin10OrGreater() && !isWin11OrGreater();
-    }
+    QVariant Win32WindowContext::windowAttribute(const QString &key) const {
+        if (key == QStringLiteral("title-bar-rect")) {
+            if (!m_windowHandle)
+                return {};
 
-    int Win32WindowContext::borderThickness() const {
-        return getWindowFrameBorderThickness(reinterpret_cast<HWND>(windowId));
+            auto frame = [this]() -> RECT {
+                auto hwnd = reinterpret_cast<HWND>(windowId);
+                // According to MSDN, WS_OVERLAPPED is not allowed for AdjustWindowRect.
+                auto style = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_STYLE) & ~WS_OVERLAPPED);
+                auto exStyle = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_EXSTYLE));
+                RECT result{};
+                const DynamicApis &apis = DynamicApis::instance();
+                if (apis.pAdjustWindowRectExForDpi) {
+                    apis.pAdjustWindowRectExForDpi(&result, style, FALSE, exStyle, getDpiForWindow(hwnd));
+                } else {
+                    ::AdjustWindowRectEx(&result, style, FALSE, exStyle);
+                }
+                return result;
+            }();
+            return QVariant::fromValue(rect2qrect(frame));
+        }
+
+        if (key == QStringLiteral("win10-border-needed")) {
+            return isSystemBorderEnabled() && !isWin11OrGreater();
+        }
+
+        if (key == QStringLiteral("border-thickness")) {
+            return m_windowHandle
+                       ? int(getWindowFrameBorderThickness(reinterpret_cast<HWND>(windowId)))
+                       : 0;
+        }
+
+        return AbstractWindowContext::windowAttribute(key);
     }
 
     void Win32WindowContext::winIdChanged() {
@@ -712,20 +729,20 @@ namespace QWK {
         auto winId = m_windowHandle->winId();
         auto hWnd = reinterpret_cast<HWND>(winId);
 
-        if (!isWin10OrGreater()) {
-            static constexpr const MARGINS margins = {1, 1, 1, 1};
-            DynamicApis::instance().pDwmExtendFrameIntoClientArea(hWnd, &margins);
+        if (!isSystemBorderEnabled()) {
+            static auto margins = QVariant::fromValue(QMargins(1, 1, 1, 1));
+            setWindowAttribute(QStringLiteral("extra-margins"), margins);
         }
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
-        for (const auto attr : {
-                 _DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
-                 _DWMWA_USE_IMMERSIVE_DARK_MODE,
-             }) {
-            const BOOL enable = TRUE;
-            DynamicApis::instance().pDwmSetWindowAttribute(hWnd, attr, &enable, sizeof(enable));
-        }
+        {
+            auto style = ::GetWindowLongPtrW(hWnd, GWL_STYLE);
+#if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
+            ::SetWindowLongPtrW(hWnd, GWL_STYLE, style & (~WS_SYSMENU));
+#else
+            ::SetWindowLongPtrW(hWnd, GWL_STYLE,
+                                (style | WS_THICKFRAME | WS_CAPTION) & (~WS_SYSMENU));
 #endif
+        }
 
         // Add managed window
         addManagedWindow(m_windowHandle, hWnd, this);
@@ -779,12 +796,198 @@ namespace QWK {
             msg.wParam = wParam;
             msg.lParam = lParam;
             QT_NATIVE_EVENT_RESULT_TYPE res = 0;
-            if (dispatch(QByteArrayLiteral("windows_generic_MSG"), &msg, &res)) {
+            if (nativeDispatch(QByteArrayLiteral("windows_generic_MSG"), &msg, &res)) {
                 *result = LRESULT(res);
                 return true;
             }
         }
         return false; // Not handled
+    }
+
+    bool Win32WindowContext::windowAttributeChanged(const QString &key, const QVariant &attribute,
+                                                    const QVariant &oldAttribute) {
+        Q_UNUSED(oldAttribute)
+
+        const auto hwnd = reinterpret_cast<HWND>(m_windowHandle->winId());
+        const DynamicApis &apis = DynamicApis::instance();
+        static constexpr const MARGINS extendedMargins = {-1, -1, -1, -1};
+        const auto &restoreMargins = [this, &apis, hwnd]() {
+            auto margins = qmargins2margins(
+                m_windowAttributes.value(QStringLiteral("extra-margins")).value<QMargins>());
+            apis.pDwmExtendFrameIntoClientArea(hwnd, &margins);
+        };
+
+        if (key == QStringLiteral("extra-margins")) {
+            auto margins = qmargins2margins(attribute.value<QMargins>());
+            apis.pDwmExtendFrameIntoClientArea(hwnd, &margins);
+            return true;
+        }
+
+        if (key == QStringLiteral("dark-mode")) {
+            if (!isWin101809OrGreater()) {
+                return false;
+            }
+
+            BOOL enable = attribute.toBool();
+            if (isWin101903OrGreater()) {
+                apis.pSetPreferredAppMode(enable ? PAM_AUTO : PAM_DEFAULT);
+            } else {
+                apis.pAllowDarkModeForApp(enable);
+            }
+            for (const auto attr : {
+                     _DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
+                     _DWMWA_USE_IMMERSIVE_DARK_MODE,
+                 }) {
+                apis.pDwmSetWindowAttribute(hwnd, attr, &enable, sizeof(enable));
+            }
+
+            apis.pFlushMenuThemes();
+            return true;
+        }
+
+        // For Win11 or later
+        if (key == QStringLiteral("mica")) {
+            if (!isWin11OrGreater()) {
+                return false;
+            }
+            if (attribute.toBool()) {
+                // We need to extend the window frame into the whole client area to be able
+                // to see the blurred window background.
+                apis.pDwmExtendFrameIntoClientArea(hwnd, &extendedMargins);
+                if (isWin1122H2OrGreater()) {
+                    // Use official DWM API to enable Mica, available since Windows 11 22H2
+                    // (10.0.22621).
+                    const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_MAINWINDOW;
+                    apis.pDwmSetWindowAttribute(hwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType,
+                                                sizeof(backdropType));
+                } else {
+                    // Use undocumented DWM API to enable Mica, available since Windows 11
+                    // (10.0.22000).
+                    const BOOL enable = TRUE;
+                    apis.pDwmSetWindowAttribute(hwnd, _DWMWA_MICA_EFFECT, &enable, sizeof(enable));
+                }
+            } else {
+                if (isWin1122H2OrGreater()) {
+                    const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_AUTO;
+                    apis.pDwmSetWindowAttribute(hwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType,
+                                                sizeof(backdropType));
+                } else {
+                    const BOOL enable = FALSE;
+                    apis.pDwmSetWindowAttribute(hwnd, _DWMWA_MICA_EFFECT, &enable, sizeof(enable));
+                }
+                restoreMargins();
+            }
+            return true;
+        }
+
+        if (key == QStringLiteral("mica-alt")) {
+            if (!isWin1122H2OrGreater()) {
+                return false;
+            }
+            if (attribute.toBool()) {
+                // We need to extend the window frame into the whole client area to be able
+                // to see the blurred window background.
+                apis.pDwmExtendFrameIntoClientArea(hwnd, &extendedMargins);
+                // Use official DWM API to enable Mica Alt, available since Windows 11 22H2
+                // (10.0.22621).
+                const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_TABBEDWINDOW;
+                apis.pDwmSetWindowAttribute(hwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType,
+                                            sizeof(backdropType));
+            } else {
+                const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_AUTO;
+                apis.pDwmSetWindowAttribute(hwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType,
+                                            sizeof(backdropType));
+                restoreMargins();
+            }
+            return true;
+        }
+
+        if (key == QStringLiteral("acrylic-material")) {
+            if (!isWin11OrGreater()) {
+                return false;
+            }
+            if (attribute.toBool()) {
+                // We need to extend the window frame into the whole client area to be able
+                // to see the blurred window background.
+                apis.pDwmExtendFrameIntoClientArea(hwnd, &extendedMargins);
+
+                const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_TRANSIENTWINDOW;
+                apis.pDwmSetWindowAttribute(hwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType,
+                                            sizeof(backdropType));
+
+                // PRIVATE API REFERENCE:
+                //     QColor gradientColor = {};
+                //     ACCENT_POLICY policy{};
+                //     policy.dwAccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+                //     policy.dwAccentFlags = ACCENT_ENABLE_ACRYLIC_WITH_LUMINOSITY;
+                //     // This API expects the #AABBGGRR format.
+                //     policy.dwGradientColor =
+                //         DWORD(qRgba(gradientColor.blue(), gradientColor.green(),
+                //                     gradientColor.red(), gradientColor.alpha()));
+                //     WINDOWCOMPOSITIONATTRIBDATA wcad{};
+                //     wcad.Attrib = WCA_ACCENT_POLICY;
+                //     wcad.pvData = &policy;
+                //     wcad.cbData = sizeof(policy);
+                //     apis.pSetWindowCompositionAttribute(hwnd, &wcad);
+            } else {
+                const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_AUTO;
+                apis.pDwmSetWindowAttribute(hwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType,
+                                            sizeof(backdropType));
+
+                // PRIVATE API REFERENCE:
+                //     ACCENT_POLICY policy{};
+                //     policy.dwAccentState = ACCENT_DISABLED;
+                //     policy.dwAccentFlags = ACCENT_NONE;
+                //     WINDOWCOMPOSITIONATTRIBDATA wcad{};
+                //     wcad.Attrib = WCA_ACCENT_POLICY;
+                //     wcad.pvData = &policy;
+                //     wcad.cbData = sizeof(policy);
+                //     apis.pSetWindowCompositionAttribute(hwnd, &wcad);
+
+                restoreMargins();
+            }
+            return true;
+        }
+
+        if (key == QStringLiteral("dwm-blur")) {
+            if (attribute.toBool()) {
+                // We can't extend the window frame for this effect.
+                restoreMargins();
+                if (isWin8OrGreater()) {
+                    ACCENT_POLICY policy{};
+                    policy.dwAccentState = ACCENT_ENABLE_BLURBEHIND;
+                    policy.dwAccentFlags = ACCENT_NONE;
+                    WINDOWCOMPOSITIONATTRIBDATA wcad{};
+                    wcad.Attrib = WCA_ACCENT_POLICY;
+                    wcad.pvData = &policy;
+                    wcad.cbData = sizeof(policy);
+                    apis.pSetWindowCompositionAttribute(hwnd, &wcad);
+                } else {
+                    DWM_BLURBEHIND bb{};
+                    bb.fEnable = TRUE;
+                    bb.dwFlags = DWM_BB_ENABLE;
+                    apis.pDwmEnableBlurBehindWindow(hwnd, &bb);
+                }
+            } else {
+                if (isWin8OrGreater()) {
+                    ACCENT_POLICY policy{};
+                    policy.dwAccentState = ACCENT_DISABLED;
+                    policy.dwAccentFlags = ACCENT_NONE;
+                    WINDOWCOMPOSITIONATTRIBDATA wcad{};
+                    wcad.Attrib = WCA_ACCENT_POLICY;
+                    wcad.pvData = &policy;
+                    wcad.cbData = sizeof(policy);
+                    apis.pSetWindowCompositionAttribute(hwnd, &wcad);
+                } else {
+                    DWM_BLURBEHIND bb{};
+                    bb.fEnable = FALSE;
+                    bb.dwFlags = DWM_BB_ENABLE;
+                    apis.pDwmEnableBlurBehindWindow(hwnd, &bb);
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     QWK_USED static constexpr const struct {
@@ -1119,12 +1322,12 @@ namespace QWK {
                                                  LPARAM lParam, LRESULT *result) {
         switch (message) {
             case WM_SHOWWINDOW: {
-                if (!centered) {
+                if (!initialCentered) {
                     // If wParam is TRUE, the window is being shown.
                     // If lParam is zero, the message was sent because of a call to the ShowWindow
                     // function.
                     if (wParam && !lParam) {
-                        centered = true;
+                        initialCentered = true;
                         moveWindowToDesktopCenter(hWnd);
                     }
                 }
@@ -1312,7 +1515,7 @@ namespace QWK {
                 int frameSize = getResizeBorderThickness(hWnd);
                 bool isTop = (nativeLocalPos.y < frameSize);
 
-                if (isWin10OrGreater()) {
+                if (isSystemBorderEnabled()) {
                     // This will handle the left, right and bottom parts of the frame
                     // because we didn't change them.
                     LRESULT originalHitTestResult = ::DefWindowProcW(hWnd, WM_NCHITTEST, 0, lParam);
@@ -1440,7 +1643,7 @@ namespace QWK {
                 break;
         }
 
-        if (!isWin10OrGreater()) {
+        if (!isSystemBorderEnabled()) {
             switch (message) {
                 case WM_NCUAHDRAWCAPTION:
                 case WM_NCUAHDRAWFRAME: {
@@ -1591,7 +1794,7 @@ namespace QWK {
         // and align it with the upper-left corner of our new client area".
         const auto clientRect = wParam ? &(reinterpret_cast<LPNCCALCSIZE_PARAMS>(lParam))->rgrc[0]
                                        : reinterpret_cast<LPRECT>(lParam);
-        if (isWin10OrGreater()) {
+        if (isSystemBorderEnabled()) {
             // Store the original top margin before the default window procedure applies the
             // default frame.
             const LONG originalTop = clientRect->top;
@@ -1618,6 +1821,7 @@ namespace QWK {
             // technique to bring the top border back.
             clientRect->top = originalTop;
         }
+
         const bool max = IsMaximized(hWnd);
         const bool full = isFullScreen(hWnd);
         // We don't need this correction when we're fullscreen. We will
@@ -1632,7 +1836,7 @@ namespace QWK {
             // a window when it's maximized unless you restore it).
             const quint32 frameSize = getResizeBorderThickness(hWnd);
             clientRect->top += frameSize;
-            if (!isWin10OrGreater()) {
+            if (!isSystemBorderEnabled()) {
                 clientRect->bottom -= frameSize;
                 clientRect->left += frameSize;
                 clientRect->right -= frameSize;
@@ -1735,10 +1939,11 @@ namespace QWK {
         const auto getNativeGlobalPosFromKeyboard = [hWnd]() -> POINT {
             const bool maxOrFull = IsMaximized(hWnd) || isFullScreen(hWnd);
             const quint32 frameSize = getResizeBorderThickness(hWnd);
-            const quint32 horizontalOffset = ((maxOrFull || !isWin10OrGreater()) ? 0 : frameSize);
+            const quint32 horizontalOffset =
+                ((maxOrFull || !isSystemBorderEnabled()) ? 0 : frameSize);
             const auto verticalOffset = [hWnd, maxOrFull, frameSize]() -> quint32 {
                 const quint32 titleBarHeight = getTitleBarHeight(hWnd);
-                if (!isWin10OrGreater()) {
+                if (!isSystemBorderEnabled()) {
                     return titleBarHeight;
                 }
                 if (isWin11OrGreater()) {

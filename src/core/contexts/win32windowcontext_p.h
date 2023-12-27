@@ -17,8 +17,6 @@ namespace QWK {
 
     class Win32WindowContext : public AbstractWindowContext {
         Q_OBJECT
-        Q_PROPERTY(bool needBorderPainter READ needBorderPainter FINAL)
-        Q_PROPERTY(int borderThickness READ borderThickness FINAL)
     public:
         Win32WindowContext();
         ~Win32WindowContext() override;
@@ -35,11 +33,12 @@ namespace QWK {
         QString key() const override;
         void virtual_hook(int id, void *data) override;
 
-        bool needBorderPainter() const;
-        int borderThickness() const;
+        QVariant windowAttribute(const QString &key) const override;
 
     protected:
         void winIdChanged() override;
+        bool windowAttributeChanged(const QString &key, const QVariant &attribute,
+                                    const QVariant &oldAttribute) override;
 
     public:
         bool windowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam, LRESULT *result);
@@ -70,7 +69,7 @@ namespace QWK {
         // WM_MOUSELEAVE.
         bool mouseLeaveBlocked = false;
 
-        bool centered = false;
+        bool initialCentered = false;
     };
 
 }

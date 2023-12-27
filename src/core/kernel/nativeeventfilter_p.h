@@ -22,8 +22,8 @@ namespace QWK {
         virtual ~NativeEventDispatcher();
 
     public:
-        virtual bool dispatch(const QByteArray &eventType, void *message,
-                              QT_NATIVE_EVENT_RESULT_TYPE *result);
+        virtual bool nativeDispatch(const QByteArray &eventType, void *message,
+                                    QT_NATIVE_EVENT_RESULT_TYPE *result);
 
     public:
         void installNativeEventFilter(NativeEventFilter *filter);
@@ -31,6 +31,8 @@ namespace QWK {
 
     protected:
         QVector<NativeEventFilter *> m_nativeEventFilters;
+
+        friend class NativeEventFilter;
 
         Q_DISABLE_COPY(NativeEventDispatcher)
     };
@@ -45,11 +47,11 @@ namespace QWK {
                                        QT_NATIVE_EVENT_RESULT_TYPE *result) = 0;
 
     protected:
-        NativeEventDispatcher *m_dispatcher;
-
-        Q_DISABLE_COPY(NativeEventFilter)
+        NativeEventDispatcher *m_nativeDispatcher;
 
         friend class NativeEventDispatcher;
+
+        Q_DISABLE_COPY(NativeEventFilter)
     };
 
     // Automatically install to QCoreApplication at construction

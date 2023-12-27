@@ -10,8 +10,9 @@
 // version without notice, or may even be removed.
 //
 
-#include <QWKStyleSupport/styleagent.h>
 #include <QtCore/QHash>
+
+#include <QWKCore/styleagent.h>
 
 namespace QWK {
 
@@ -25,18 +26,12 @@ namespace QWK {
 
         StyleAgent *q_ptr;
 
-        StyleAgent::SystemTheme systemTheme = StyleAgent::Dark;
-        QHash<QWindow *, QVariantHash> windowAttributes;
+        StyleAgent::SystemTheme systemTheme = StyleAgent::Unknown;
 
-        virtual void setupSystemThemeHook();
-        virtual void removeSystemThemeHook();
-        virtual bool updateWindowAttribute(QWindow *window, const QString &key,
-                                           const QVariant &attribute, const QVariant &oldAttribute);
+        void setupSystemThemeHook();
+        void removeSystemThemeHook();
 
         void notifyThemeChanged(StyleAgent::SystemTheme theme);
-
-    private:
-        void _q_windowDestroyed();
     };
 
 }

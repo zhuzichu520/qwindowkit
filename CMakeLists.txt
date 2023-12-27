@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.17)
 
-project(QWindowKit VERSION 0.0.1.1 LANGUAGES CXX)
+project(QWindowKit VERSION 2.5.1.1 LANGUAGES CXX)
 
 # ----------------------------------
 # Build Options
@@ -8,12 +8,13 @@ project(QWindowKit VERSION 0.0.1.1 LANGUAGES CXX)
 option(QWINDOWKIT_BUILD_STATIC "Build static libraries" OFF)
 option(QWINDOWKIT_BUILD_WIDGETS "Build widgets module" ON)
 option(QWINDOWKIT_BUILD_QUICK "Build quick module" ON)
-option(QWINDOWKIT_BUILD_STYLESUPPORT "Build style support module" OFF)
 option(QWINDOWKIT_BUILD_EXAMPLES "Build examples" OFF)
 option(QWINDOWKIT_BUILD_DOCUMENTATIONS "Build documentations" OFF)
 option(QWINDOWKIT_INSTALL "Install library" ON)
 
-option(QWINDOWKIT_FORCE_QT_WINDOW_CONTEXT "Enable Qt Window Context anyway" OFF)
+option(QWINDOWKIT_ENABLE_QT_WINDOW_CONTEXT "Enable Qt Window Context anyway" OFF)
+option(QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS "Enable system borders on Windows" ON)
+option(QWINDOWKIT_ENABLE_STYLE_AGENT "Enable building style agent" ON)
 
 # ----------------------------------
 # CMake Settings
