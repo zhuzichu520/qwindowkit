@@ -1,5 +1,11 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef QWKGLOBAL_H
 #define QWKGLOBAL_H
+
+#include <functional>
 
 #include <QtCore/QEvent>
 #include <QtGui/QtEvents>
@@ -27,5 +33,11 @@ using QT_ENTER_EVENT_TYPE = QEvent;
 #ifndef QWINDOWKIT_CONFIG
 #  define QWINDOWKIT_CONFIG(feature) ((1 / QWINDOWKIT_##feature) == 1)
 #endif
+
+namespace QWK {
+
+    using ScreenRectCallback = std::function<QRect(const QSize &)>;
+
+}
 
 #endif // QWKGLOBAL_H

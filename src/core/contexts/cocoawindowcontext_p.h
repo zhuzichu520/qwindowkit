@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef COCOAWINDOWCONTEXT_P_H
 #define COCOAWINDOWCONTEXT_P_H
 
@@ -22,6 +26,8 @@ namespace QWK {
 
         QString key() const override;
         void virtual_hook(int id, void *data) override;
+
+        QVariant windowAttribute(const QString &key) const override;
 
     protected:
         void winIdChanged() override;

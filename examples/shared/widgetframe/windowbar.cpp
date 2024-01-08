@@ -1,7 +1,12 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #include "windowbar.h"
 #include "windowbar_p.h"
 
 #include <QtCore/QDebug>
+#include <QtCore/QLocale>
 #include <QtGui/QtEvents>
 
 namespace QWK {
@@ -17,6 +22,10 @@ namespace QWK {
     void WindowBarPrivate::init() {
         Q_Q(WindowBar);
         layout = new QHBoxLayout();
+        if (QLocale::system().textDirection() == Qt::RightToLeft) {
+            layout->setDirection(QBoxLayout::RightToLeft);
+        }
+        
         layout->setContentsMargins(QMargins());
         layout->setSpacing(0);
         for (int i = IconButton; i <= CloseButton; ++i) {

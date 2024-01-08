@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef QWKWINDOWSEXTRA_P_H
 #define QWKWINDOWSEXTRA_P_H
 
@@ -15,9 +19,7 @@
 #include <timeapi.h>
 
 #include <QWKCore/qwindowkit_windows.h>
-
 #include <QtCore/private/qsystemlibrary_p.h>
-#include <QtCore/private/qwinregistry_p.h>
 
 #include <QtGui/QGuiApplication>
 #include <QtGui/QStyleHints>
@@ -132,12 +134,14 @@ namespace QWK {
     };
     using PWINDOWCOMPOSITIONATTRIBDATA = WINDOWCOMPOSITIONATTRIBDATA *;
 
-    enum PREFERRED_APP_MODE
-    {
-        PAM_DEFAULT = 0, // Default behavior on systems before Win10 1809. It indicates the application doesn't support dark mode at all.
-        PAM_AUTO = 1,    // Available since Win10 1809, let system decide whether to enable dark mode or not.
-        PAM_DARK = 2,    // Available since Win10 1903, force dark mode regardless of the system theme.
-        PAM_LIGHT = 3,   // Available since Win10 1903, force light mode regardless of the system theme.
+    enum PREFERRED_APP_MODE {
+        PAM_DEFAULT = 0, // Default behavior on systems before Win10 1809. It indicates the
+                         // application doesn't support dark mode at all.
+        PAM_AUTO =
+            1, // Available since Win10 1809, let system decide whether to enable dark mode or not.
+        PAM_DARK = 2, // Available since Win10 1903, force dark mode regardless of the system theme.
+        PAM_LIGHT =
+            3, // Available since Win10 1903, force light mode regardless of the system theme.
         PAM_MAX = 4
     };
 
@@ -155,7 +159,7 @@ namespace QWK {
 
         struct DynamicApis {
             static const DynamicApis &instance() {
-                static const DynamicApis inst{};
+                static const DynamicApis inst;
                 return inst;
             }
 
@@ -230,7 +234,7 @@ namespace QWK {
 
             ~DynamicApis() = default;
 
-            Q_DISABLE_COPY_MOVE(DynamicApis)
+            Q_DISABLE_COPY(DynamicApis)
         };
 
     }
@@ -337,7 +341,7 @@ namespace QWK {
     }
 
     static inline bool isWindowFrameBorderColorized() {
-        QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
+        WindowsRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
         if (!registry.isValid()) {
             return false;
         }
@@ -359,7 +363,7 @@ namespace QWK {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
         return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
 #else
-        QWinRegistryKey registry(
+        WindowsRegistryKey registry(
             HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\CurrentVersion\Themes\Personalize)");
         if (!registry.isValid()) {
             return false;
@@ -390,7 +394,7 @@ namespace QWK {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
         return QGuiApplication::palette().color(QPalette::Accent);
 #else
-        QWinRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
+        WindowsRegistryKey registry(HKEY_CURRENT_USER, LR"(Software\Microsoft\Windows\DWM)");
         if (!registry.isValid()) {
             return {};
         }

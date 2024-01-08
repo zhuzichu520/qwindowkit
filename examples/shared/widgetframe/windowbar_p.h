@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef WINDOWBARPRIVATE_H
 #define WINDOWBARPRIVATE_H
 
@@ -45,7 +49,7 @@ namespace QWK {
         }
 
     private:
-        Q_DISABLE_COPY_MOVE(WindowBarPrivate)
+        Q_DISABLE_COPY(WindowBarPrivate)
     };
 
 }

@@ -46,7 +46,7 @@ You can join our [Discord channel](https://discord.gg/grrM4Tmesy). You can share
 |:---------:|:-----------:|:-------------------------:|
 |    Qt     |   \>=5.12   | Core, Gui, Widgets, Quick |
 | Compiler  |  \>=C++17   |   MSVC 2019, GCC, Clang   |
-|   CMake   |   \>=3.17   |   >=3.20 is recommended   |
+|   CMake   |   \>=3.19   |   >=3.20 is recommended   |
 
 ### Tested Compilers
 
@@ -85,7 +85,10 @@ You can join our [Discord channel](https://discord.gg/grrM4Tmesy). You can share
 ### Build & Install
 
 ```sh
-cmake -B build \
+git clone --recursive https://github.com/stdware/qwindowkit
+cd qwindowkit
+
+cmake -B build -S . \
   -Dqmsetup_DIR=<dir> \ # Optional
   -DCMAKE_INSTALL_PREFIX=/path/install \
   -G "Ninja Multi-Config"
@@ -237,7 +240,8 @@ Window {
         window.visible = true
     }
     WindowAgent {
-      // ...
+        id: windowAgent
+        // ...
     }
 }
 ```
@@ -254,16 +258,22 @@ See [examples](examples) for more demo use cases. The examples have no High DPI 
 ## TODO
 
 + Fix 5.15 window abnormal behavior
-+ Support Mac system buttons customization for Quick
 + More documentations
 + When do we support Linux native features?
 
 ## Special Thanks
 
-+ [Arabaku](https://github.com/Arabaku)
 + [Maplespe](https://github.com/Maplespe)
 + [zhiyiYo](https://github.com/zhiyiYo)
 
 ## License
 
-QWindowKit is licensed under the Apache 2.0 License.
+QWindowKit is licensed under the [Apache 2.0 License](./LICENSE).
+
+<!--
+
+**You MUST keep a copyright notice of QWindowKit in a prominent place on your project, such as the README document and the About Dialog.**
+
+**You MUST NOT remove the license text from the header files and source files of QWindowKit.**
+
+-->

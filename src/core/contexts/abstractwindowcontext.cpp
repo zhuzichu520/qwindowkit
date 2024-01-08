@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #include "abstractwindowcontext_p.h"
 
 #include <QtGui/QPen>
@@ -120,8 +124,9 @@ namespace QWK {
     }
 
 #ifdef Q_OS_MAC
-    void AbstractWindowContext::setSystemButtonArea(const QRect &rect) {
-        m_systemButtonArea = rect;
+    void
+        AbstractWindowContext::setSystemButtonAreaCallback(const ScreenRectCallback &callback) {
+        m_systemButtonAreaCallback = callback;
         virtual_hook(SystemButtonAreaChangedHook, nullptr);
     }
 #endif

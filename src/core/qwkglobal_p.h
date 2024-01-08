@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef QWKGLOBAL_P_H
 #define QWKGLOBAL_P_H
 
@@ -10,6 +14,7 @@
 // version without notice, or may even be removed.
 //
 
+#include <QtCore/QObject>
 #include <QtCore/QLoggingCategory>
 #include <QtGui/QMouseEvent>
 
@@ -42,6 +47,17 @@ QWK_CORE_EXPORT Q_DECLARE_LOGGING_CATEGORY(qWindowKitLog)
 
 namespace QWK {
 
+    namespace Private {
+
+        class ObjectHelper : public QObject {
+        public:
+            static inline bool sendEvent(QObject *obj, QEvent *event) {
+                return static_cast<ObjectHelper *>(obj)->event(event);
+            }
+        };
+
+    }
+
     inline QPoint getMouseEventScenePos(const QMouseEvent *event) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         return event->scenePosition().toPoint();
@@ -49,7 +65,7 @@ namespace QWK {
         return event->windowPos().toPoint();
 #endif
     }
-    
+
     inline QPoint getMouseEventGlobalPos(const QMouseEvent *event) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         return event->globalPosition().toPoint();
@@ -57,7 +73,6 @@ namespace QWK {
         return event->screenPos().toPoint();
 #endif
     }
-    
 }
 
 #endif // QWKGLOBAL_P_H

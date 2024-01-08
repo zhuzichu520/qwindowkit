@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #include "quickwindowagent.h"
 #include "quickwindowagent_p.h"
 
@@ -59,6 +63,9 @@ namespace QWK {
         if (!d->context->setTitleBar(item)) {
             return;
         }
+#ifdef Q_OS_MAC
+        setSystemButtonArea(nullptr);
+#endif
         Q_EMIT titleBarWidgetChanged(item);
     }
 

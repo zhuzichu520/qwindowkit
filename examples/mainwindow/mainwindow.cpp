@@ -1,3 +1,7 @@
+// Copyright (C) 2023-2024 Stdware Collections (https://www.github.com/stdware)
+// Copyright (C) 2021-2023 wangwenx190 (Yuhang Zhao)
+// SPDX-License-Identifier: Apache-2.0
+
 #include "mainwindow.h"
 
 #include <QtCore/QDebug>
@@ -5,6 +9,7 @@
 #include <QtCore/QTime>
 #include <QtCore/QTimer>
 #include <QtGui/QPainter>
+#include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QPushButton>
@@ -288,6 +293,13 @@ void MainWindow::installWindowAgent() {
     windowAgent->setSystemButton(QWK::WindowAgentBase::Close, closeButton);
 #endif
     windowAgent->setHitTestVisible(menuBar, true);
+
+#ifdef Q_OS_MAC
+    windowAgent->setSystemButtonAreaCallback([](const QSize &size) {
+        static constexpr const int width = 75;
+        return QRect(QPoint(size.width() - width, 0), QSize(width, size.height())); //
+    });
+#endif
 
     setMenuWidget(windowBar);
 
