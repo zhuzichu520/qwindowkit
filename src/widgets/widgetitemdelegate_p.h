@@ -38,6 +38,7 @@ namespace QWK {
         bool isWindowActive(const QObject *host) const override;
         Qt::WindowStates getWindowState(const QObject *host) const override;
         Qt::WindowFlags getWindowFlags(const QObject *host) const override;
+        QRect getGeometry(const QObject *host) const override;
 
         void resetQtGrabbedControl(QObject *host) const override;
         void setWindowState(QObject *host, Qt::WindowStates state) const override;
@@ -45,6 +46,7 @@ namespace QWK {
         void restoreCursorShape(QObject *host) const override;
         void setWindowFlags(QObject *host, Qt::WindowFlags flags) const override;
         void setWindowVisible(QObject *host, bool visible) const override;
+        void setGeometry(QObject *host, const QRect &rect) override;
         void bringWindowToTop(QObject *host) const override;
     };
 

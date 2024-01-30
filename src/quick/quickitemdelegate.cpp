@@ -68,12 +68,20 @@ namespace QWK {
         return static_cast<const QQuickWindow *>(host)->flags();
     }
 
+    QRect QuickItemDelegate::getGeometry(const QObject *host) const {
+        return static_cast<const QQuickWindow *>(host)->geometry();
+    }
+
     void QuickItemDelegate::setWindowFlags(QObject *host, Qt::WindowFlags flags) const {
         static_cast<QQuickWindow *>(host)->setFlags(flags);
     }
 
     void QuickItemDelegate::setWindowVisible(QObject *host, bool visible) const {
         static_cast<QQuickWindow *>(host)->setVisible(visible);
+    }
+
+    void QuickItemDelegate::setGeometry(QObject *host, const QRect &rect) {
+        static_cast<QQuickWindow *>(host)->setGeometry(rect);
     }
 
     void QuickItemDelegate::bringWindowToTop(QObject *host) const {
