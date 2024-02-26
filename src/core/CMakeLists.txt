@@ -15,6 +15,8 @@ set(_src
     kernel/nativeeventfilter.cpp
     kernel/sharedeventfilter_p.h
     kernel/sharedeventfilter.cpp
+    kernel/winidchangeeventfilter_p.h
+    kernel/winidchangeeventfilter.cpp
     shared/systemwindow_p.h
     contexts/abstractwindowcontext_p.h
     contexts/abstractwindowcontext.cpp
@@ -87,18 +89,13 @@ endif()
 
 qwk_add_library(${PROJECT_NAME} AUTOGEN
     SOURCES ${_src}
-    LINKS
+    FEATURES cxx_std_17
     LINKS_PRIVATE ${_links_private}
     QT_LINKS Core Gui
     QT_INCLUDE_PRIVATE Core Gui
     INCLUDE_PRIVATE kernel contexts shared
     PREFIX QWK_CORE
     SYNC_INCLUDE_OPTIONS ${_sync_include_options}
-)
-
-set_target_properties(${PROJECT_NAME} PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED TRUE
 )
 
 set(QWINDOWKIT_ENABLED_TARGETS ${QWINDOWKIT_ENABLED_TARGETS} ${PROJECT_NAME} PARENT_SCOPE)

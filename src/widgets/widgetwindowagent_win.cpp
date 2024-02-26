@@ -74,7 +74,7 @@ namespace QWK {
 
         inline void resumeWidgetEventAndDraw(QWidget *w, QEvent *event) {
             // Let the widget paint first
-            Private::ObjectHelper::sendEvent(w, event);
+            static_cast<QObject *>(w)->event(event);
 
             // Due to the timer or user action, Qt will repaint some regions spontaneously,
             // even if there is no WM_PAINT message, we must wait for it to finish painting
@@ -84,7 +84,7 @@ namespace QWK {
 
         inline void resumeWindowEventAndDraw(QWindow *window, QEvent *event) {
             // Let Qt paint first
-            Private::ObjectHelper::sendEvent(window, event);
+            static_cast<QObject *>(window)->event(event);
 
             // Upon receiving the WM_PAINT message, Qt will repaint the entire view, and we
             // must wait for it to finish painting before drawing this top border area.
@@ -136,22 +136,31 @@ namespace QWK {
             Q_UNUSED(obj)
 
             auto window = widget->windowHandle();
+            switch (event->type()) {
+                case QEvent::Expose: {
+                    // Qt will absolutely send a QExposeEvent or QResizeEvent to the QWindow when it
+                    // receives a WM_PAINT message. When the control flow enters the expose handler,
+                    // Qt must have already called BeginPaint() and it's the best time for us to
+                    // draw the top border.
 
-            // Qt will absolutely send a QExposeEvent or QResizeEvent to the QWindow when it
-            // receives a WM_PAINT message. When the control flow enters the expose handler, Qt
-            // must have already called BeginPaint() and it's the best time for us to draw the
-            // top border.
-
-            // Since a QExposeEvent will be sent immediately after the QResizeEvent, we can simply
-            // ignore it.
-            if (event->type() == QEvent::Expose) {
-                auto ee = static_cast<QExposeEvent *>(event);
-                if (window->isExposed() && isNormalWindow() && !ee->region().isNull()) {
-                    resumeWindowEventAndDraw(window, event);
-                    return true;
+                    // Since a QExposeEvent will be sent immediately after the QResizeEvent, we can
+                    // simply ignore it.
+                    auto ee = static_cast<QExposeEvent *>(event);
+                    if (window->isExposed() && isNormalWindow() && !ee->region().isNull()) {
+                        resumeWindowEventAndDraw(window, event);
+                        return true;
+                    }
+                    break;
                 }
+                case QEvent::WinIdChange: {
+                    if (auto winId = ctx->windowId()) {
+                        updateGeometry();
+                    }
+                    break;
+                }
+                default:
+                    break;
             }
-
             return false;
         }
 
