@@ -8,43 +8,36 @@
 #include <QtQuick/private/qquickitem_p.h>
 
 #include <QWKCore/qwindowkit_windows.h>
+#include <QWKCore/private/windows10borderhandler_p.h>
 
 namespace QWK {
 
 #if QWINDOWKIT_CONFIG(ENABLE_WINDOWS_SYSTEM_BORDERS)
-    // TODO: Find a way to draw native border
-    // We haven't found a way to place hooks in the Quick program and call the GDI API to draw
-    // the native border area so that we'll use the emulated drawn border for now.
 
-    class BorderItem : public QQuickPaintedItem,
-                       public NativeEventFilter,
-                       public SharedEventFilter {
+    class BorderItem : public QQuickPaintedItem, public Windows10BorderHandler {
     public:
         explicit BorderItem(QQuickItem *parent, AbstractWindowContext *context);
         ~BorderItem() override;
 
-        inline bool isNormalWindow() const;
-
-        inline void updateGeometry();
+        void updateGeometry() override;
 
     public:
         void paint(QPainter *painter) override;
         void itemChange(ItemChange change, const ItemChangeData &data) override;
 
     protected:
-        bool nativeEventFilter(const QByteArray &eventType, void *message,
-                               QT_NATIVE_EVENT_RESULT_TYPE *result) override;
-
         bool sharedEventFilter(QObject *obj, QEvent *event) override;
 
-        AbstractWindowContext *context;
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        volatile bool needPaint = false;
 
     private:
-        void _q_windowActivityChanged();
+        void _q_afterSynchronizing();
+#  endif
     };
 
     BorderItem::BorderItem(QQuickItem *parent, AbstractWindowContext *context)
-        : QQuickPaintedItem(parent), context(context) {
+        : QQuickPaintedItem(parent), Windows10BorderHandler(context) {
         setAntialiasing(true);   // We need anti-aliasing to give us better result.
         setFillColor({});        // Will improve the performance a little bit.
         setOpaquePainting(true); // Will also improve the performance, we don't draw
@@ -59,35 +52,50 @@ namespace QWK {
         setZ(std::numeric_limits<qreal>::max()); // Make sure our fake border always above
                                                  // everything in the window.
 
-        context->installNativeEventFilter(this);
-        context->installSharedEventFilter(this);
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        connect(window(), &QQuickWindow::afterSynchronizing, this,
+                &BorderItem::_q_afterSynchronizing, Qt::DirectConnection);
+#  endif
 
-        connect(window(), &QQuickWindow::activeChanged, this,
-                &BorderItem::_q_windowActivityChanged);
-        updateGeometry();
+        // First update
+        if (context->windowId()) {
+            setupNecessaryAttributes();
+        }
+        BorderItem::updateGeometry();
     }
 
     BorderItem::~BorderItem() = default;
 
-    bool BorderItem::isNormalWindow() const {
-        return !(context->window()->windowStates() &
-                 (Qt::WindowMinimized | Qt::WindowMaximized | Qt::WindowFullScreen));
-    }
-
     void BorderItem::updateGeometry() {
-        setHeight(context->windowAttribute(QStringLiteral("border-thickness")).toInt());
+        setHeight(borderThickness());
         setVisible(isNormalWindow());
     }
 
     void BorderItem::paint(QPainter *painter) {
-        QRect rect(QPoint(0, 0), size().toSize());
-        QRegion region(rect);
-        void *args[] = {
-            painter,
-            &rect,
-            &region,
-        };
-        context->virtual_hook(AbstractWindowContext::DrawWindows10BorderHook, args);
+        Q_UNUSED(painter)
+
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        if (auto api = window()->rendererInterface()->graphicsApi();
+            !(api == QSGRendererInterface::Direct3D11
+
+#    if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+              || api == QSGRendererInterface::Direct3D12
+#    endif
+              )) {
+#  endif
+            QRect rect(QPoint(0, 0), size().toSize());
+            QRegion region(rect);
+            void *args[] = {
+                painter,
+                &rect,
+                &region,
+            };
+            ctx->virtual_hook(AbstractWindowContext::DrawWindows10BorderHook, args);
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        } else {
+            needPaint = true;
+        }
+#  endif
     }
 
     void BorderItem::itemChange(ItemChange change, const ItemChangeData &data) {
@@ -103,55 +111,27 @@ namespace QWK {
         }
     }
 
-    bool BorderItem::nativeEventFilter(const QByteArray &eventType, void *message,
-                                       QT_NATIVE_EVENT_RESULT_TYPE *result) {
-        Q_UNUSED(eventType)
-
-        const auto msg = static_cast<const MSG *>(message);
-        switch (msg->message) {
-            case WM_THEMECHANGED:
-            case WM_SYSCOLORCHANGE:
-            case WM_DWMCOLORIZATIONCOLORCHANGED: {
-                update();
-                break;
-            }
-
-            case WM_SETTINGCHANGE: {
-                if (isImmersiveColorSetChange(msg->wParam, msg->lParam)) {
-                    update();
-                }
-                break;
-            }
-
-            default:
-                break;
-        }
-        return false;
-    }
-
     bool BorderItem::sharedEventFilter(QObject *obj, QEvent *event) {
         Q_UNUSED(obj)
 
         switch (event->type()) {
-            case QEvent::WinIdChange: {
-                if (auto winId = context->windowId()) {
-                    updateGeometry();
-                }
-                break;
-            }
             case QEvent::WindowStateChange: {
                 updateGeometry();
-                break;
             }
             default:
                 break;
         }
-        return false;
+        return Windows10BorderHandler::sharedEventFilter(obj, event);
     }
 
-    void BorderItem::_q_windowActivityChanged() {
-        update();
+#  if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    void BorderItem::_q_afterSynchronizing() {
+        if (needPaint) {
+            needPaint = false;
+            drawBorder();
+        }
     }
+#  endif
 
     void QuickWindowAgentPrivate::setupWindows10BorderWorkaround() {
         // Install painting hook
