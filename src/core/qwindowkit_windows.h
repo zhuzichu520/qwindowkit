@@ -22,14 +22,6 @@
 #  define GET_Y_LPARAM(lp) (static_cast<int>(static_cast<short>(HIWORD(lp))))
 #endif
 
-#ifndef IsMinimized
-#  define IsMinimized(hwnd) (::IsIconic(hwnd))
-#endif
-
-#ifndef IsMaximized
-#  define IsMaximized(hwnd) (::IsZoomed(hwnd))
-#endif
-
 #ifndef RECT_WIDTH
 #  define RECT_WIDTH(rect) ((rect).right - (rect).left)
 #endif
@@ -39,6 +31,8 @@
 #endif
 
 // Maybe undocumented Windows messages
+// https://github.com/tinysec/public/blob/master/win32k/MessageTable.md
+// https://ulib.sourceforge.io/doxy/a00239.html
 #ifndef WM_UAHDESTROYWINDOW
 #  define WM_UAHDESTROYWINDOW (0x0090)
 #endif

@@ -47,7 +47,7 @@ namespace QWK {
         inline WindowItemDelegate *delegate() const;
 
         inline bool isHitTestVisible(const QObject *obj) const;
-        bool setHitTestVisible(const QObject *obj, bool visible);
+        bool setHitTestVisible(QObject *obj, bool visible);
 
         inline QObject *systemButton(WindowAgentBase::SystemButton button) const;
         bool setSystemButton(WindowAgentBase::SystemButton button, QObject *obj);
@@ -62,6 +62,24 @@ namespace QWK {
 
         bool isInSystemButtons(const QPoint &pos, WindowAgentBase::SystemButton *button) const;
         bool isInTitleBarDraggableArea(const QPoint &pos) const;
+
+        inline bool isHostWidthFixed() const {
+            return m_windowHandle
+                       ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
+                          m_windowHandle->minimumWidth() == m_windowHandle->maximumWidth())
+                       : false;
+        }
+        inline bool isHostHeightFixed() const {
+            return m_windowHandle
+                       ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
+                          m_windowHandle->minimumHeight() == m_windowHandle->maximumHeight())
+                       : false;
+        }
+        inline bool isHostSizeFixed() const {
+            return m_windowHandle ? ((m_windowHandle->flags() & Qt::MSWindowsFixedSizeDialogHint) ||
+                                     m_windowHandle->minimumSize() == m_windowHandle->maximumSize())
+                                  : false;
+        }
 
         virtual QString key() const;
 
@@ -83,6 +101,9 @@ namespace QWK {
         virtual bool setWindowAttribute(const QString &key, const QVariant &attribute);
 
     protected:
+        bool eventFilter(QObject *obj, QEvent *event) override;
+
+    protected:
         virtual void winIdChanged(WId winId, WId oldWinId) = 0;
         virtual bool windowAttributeChanged(const QString &key, const QVariant &attribute,
                                             const QVariant &oldAttribute);
@@ -90,7 +111,7 @@ namespace QWK {
     protected:
         QObject *m_host{};
         std::unique_ptr<WindowItemDelegate> m_delegate;
-        QWindow *m_windowHandle{};
+        QPointer<QWindow> m_windowHandle;
         WId m_windowId{};
 
         QSet<const QObject *> m_hitTestVisibleItems;
@@ -102,9 +123,14 @@ namespace QWK {
         std::array<QObject *, WindowAgentBase::Close + 1> m_systemButtons{};
 
         QVariantHash m_windowAttributes;
-
-        std::unique_ptr<QObject> m_windowEventFilter;
         std::unique_ptr<WinIdChangeEventFilter> m_winIdChangeEventFilter;
+        
+        void removeSystemButtonsAndHitTestItems();
+
+    private:
+        void _q_titleBarDistroyed(QObject *obj);
+        void _q_hitTestVisibleItemDestroyed(QObject *obj);
+        void _q_systemButtonDestroyed(QObject *obj);
     };
 
     inline QObject *AbstractWindowContext::host() const {

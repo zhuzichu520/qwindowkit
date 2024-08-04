@@ -121,7 +121,7 @@ namespace QWK {
         auto window = m_context->window();
         auto delegate = m_context->delegate();
         auto me = static_cast<const QMouseEvent *>(event);
-        bool fixedSize = delegate->isHostSizeFixed(host);
+        bool fixedSize = m_context->isHostSizeFixed();
 
         QPoint scenePos = getMouseEventScenePos(me);
         QPoint globalPos = getMouseEventGlobalPos(me);
@@ -219,8 +219,10 @@ namespace QWK {
 
             case QEvent::MouseButtonDblClick: {
                 if (me->button() == Qt::LeftButton && inTitleBar && !fixedSize) {
+                    Qt::WindowFlags windowFlags = delegate->getWindowFlags(host);
                     Qt::WindowStates windowState = delegate->getWindowState(host);
-                    if (!(windowState & Qt::WindowFullScreen)) {
+                    if ((windowFlags & Qt::WindowMaximizeButtonHint) &&
+                        !(windowState & Qt::WindowFullScreen)) {
                         if (windowState & Qt::WindowMaximized) {
                             delegate->setWindowState(host, windowState & ~Qt::WindowMaximized);
                         } else {

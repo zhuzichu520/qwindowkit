@@ -330,13 +330,9 @@ namespace QWK {
             nswindow.movableByWindowBackground = NO;
             nswindow.movable = NO; // This line causes the window in the wrong position when
                                    // become fullscreen.
-            //  For some unknown reason, we don't need the following hack in Qt versions below or
-            //  equal to 6.2.4.
-#if (QT_VERSION > QT_VERSION_CHECK(6, 2, 4))
-            [nswindow standardWindowButton:NSWindowCloseButton].hidden = (visible ? NO : YES);
-            [nswindow standardWindowButton:NSWindowMiniaturizeButton].hidden = (visible ? NO : YES);
-            [nswindow standardWindowButton:NSWindowZoomButton].hidden = (visible ? NO : YES);
-#endif
+            [nswindow standardWindowButton:NSWindowCloseButton].hidden = NO;
+            [nswindow standardWindowButton:NSWindowMiniaturizeButton].hidden = NO;
+            [nswindow standardWindowButton:NSWindowZoomButton].hidden = NO;
         }
 
         static void replaceImplementations() {
@@ -514,7 +510,7 @@ namespace QWK {
     static inline void releaseWindowProxy(const WId windowId) {
         if (auto proxy = g_proxyList->take(windowId)) {
             // TODO: Determine if the window is valid
-            
+
             // The window has been destroyed
             // proxy->setSystemTitleBarVisible(true);
             delete proxy;
@@ -637,10 +633,11 @@ namespace QWK {
             }
 
             case QEvent::MouseButtonDblClick: {
-                if (me->button() == Qt::LeftButton && inTitleBar &&
-                    !delegate->isHostSizeFixed(host)) {
+                if (me->button() == Qt::LeftButton && inTitleBar && !m_context->isHostSizeFixed()) {
+                    Qt::WindowFlags windowFlags = delegate->getWindowFlags(host);
                     Qt::WindowStates windowState = delegate->getWindowState(host);
-                    if (!(windowState & Qt::WindowFullScreen)) {
+                    if ((windowFlags & Qt::WindowMaximizeButtonHint) &&
+                        !(windowState & Qt::WindowFullScreen)) {
                         if (windowState & Qt::WindowMaximized) {
                             delegate->setWindowState(host, windowState & ~Qt::WindowMaximized);
                         } else {

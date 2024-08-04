@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(QWindowKit VERSION 1.0.1.0 LANGUAGES CXX)
+project(QWindowKit VERSION 1.1.1.0 LANGUAGES CXX)
 
 # ----------------------------------
 # Build Options
@@ -15,6 +15,31 @@ option(QWINDOWKIT_INSTALL "Install library" ON)
 option(QWINDOWKIT_ENABLE_QT_WINDOW_CONTEXT "Enable Qt Window Context anyway" OFF)
 option(QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS "Enable system borders on Windows" ON)
 option(QWINDOWKIT_ENABLE_STYLE_AGENT "Enable building style agent" ON)
+
+#[[
+
+Detailed Introcuction to Configure Options:
+
+`QWINDOWKIT_BUILD_DOCUMENTATIONS`
+  - If you have installed `Doxygen`, you can ENABLE this option so that the documentations
+    will also be built and installed.
+  - If not, you can read the comments in `qdoc` style in `cpp` files to get detailed usages
+    of the public APIs.
+
+`QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS`
+  - If you don't want the system borders on Windows 10/11, you can DISABLE this option.
+  - If so, the Windows 10 top border issue will disappear. However, part of the client edge
+    area will be occupied as the resizing margins.
+
+`QWINDOWKIT_ENABLE_QT_WINDOW_CONTEXT`
+  - If you want to use pure Qt emulated frameless implementation, you can ENABLE this option.
+  - If so, all system native features will be lost.
+
+`QWINDOWKIT_ENABLE_STYLE_AGENT`
+  - Select whether to exclude the style component by DISABLING this option according to your
+    requirements and your Qt version.
+
+#]]
 
 # ----------------------------------
 # CMake Settings
@@ -54,7 +79,7 @@ if(NOT TARGET qmsetup::library)
     set(_source_dir ${CMAKE_CURRENT_SOURCE_DIR}/qmsetup)
 
     # Import install function
-    include("${_source_dir}/cmake/modules/InstallPackage.cmake")
+    include("${_source_dir}/cmake/modules/private/InstallPackage.cmake")
 
     # Install package in place
     set(_package_path)

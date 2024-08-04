@@ -42,7 +42,7 @@ protected:
 };
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
-     installWindowAgent();
+    installWindowAgent();
 
 #if 1
     auto clockWidget = new ClockWidget();
@@ -60,6 +60,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     setWindowTitle(tr("Example MainWindow"));
     resize(800, 600);
 
+    // setFixedHeight(600);
     // windowAgent->centralize();
 }
 
@@ -105,15 +106,19 @@ bool MainWindow::event(QEvent *event) {
     switch (event->type()) {
         case QEvent::WindowActivate: {
             auto menu = menuWidget();
-            menu->setProperty("bar-active", true);
-            style()->polish(menu);
+            if (menu) {
+                menu->setProperty("bar-active", true);
+                style()->polish(menu);
+            }
             break;
         }
 
         case QEvent::WindowDeactivate: {
             auto menu = menuWidget();
-            menu->setProperty("bar-active", false);
-            style()->polish(menu);
+            if (menu) {
+                menu->setProperty("bar-active", false);
+                style()->polish(menu);
+            }
             break;
         }
 
@@ -303,14 +308,14 @@ void MainWindow::installWindowAgent() {
     windowBar->setTitleLabel(titleLabel);
     windowBar->setHostWidget(this);
 
-   windowAgent->setTitleBar(windowBar);
+    windowAgent->setTitleBar(windowBar);
 #ifndef Q_OS_MAC
-   windowAgent->setSystemButton(QWK::WindowAgentBase::WindowIcon, iconButton);
-   windowAgent->setSystemButton(QWK::WindowAgentBase::Minimize, minButton);
-   windowAgent->setSystemButton(QWK::WindowAgentBase::Maximize, maxButton);
-   windowAgent->setSystemButton(QWK::WindowAgentBase::Close, closeButton);
+    windowAgent->setSystemButton(QWK::WindowAgentBase::WindowIcon, iconButton);
+    windowAgent->setSystemButton(QWK::WindowAgentBase::Minimize, minButton);
+    windowAgent->setSystemButton(QWK::WindowAgentBase::Maximize, maxButton);
+    windowAgent->setSystemButton(QWK::WindowAgentBase::Close, closeButton);
 #endif
-   windowAgent->setHitTestVisible(menuBar, true);
+    windowAgent->setHitTestVisible(menuBar, true);
 
 #ifdef Q_OS_MAC
     windowAgent->setSystemButtonAreaCallback([](const QSize &size) {
@@ -321,24 +326,6 @@ void MainWindow::installWindowAgent() {
 
     setMenuWidget(windowBar);
 
-    // 3. Adds simulated mouse events to the title bar buttons
-#ifdef Q_OS_WINDOWS
-    // Emulate Window system menu button behaviors
-    connect(iconButton, &QAbstractButton::clicked, windowAgent, [this, iconButton] {
-        iconButton->setProperty("double-click-close", false);
-
-        // Pick a suitable time threshold
-        QTimer::singleShot(75, windowAgent, [this, iconButton]() {
-            if (iconButton->property("double-click-close").toBool())
-                return;
-            windowAgent->showSystemMenu(iconButton->mapToGlobal(QPoint{0, iconButton->height()}));
-        });
-    });
-    connect(iconButton, &QWK::WindowButton::doubleClicked, this, [iconButton, this]() {
-        iconButton->setProperty("double-click-close", true);
-        close();
-    });
-#endif
 
 #ifndef Q_OS_MAC
     connect(windowBar, &QWK::WindowBar::minimizeRequested, this, &QWidget::showMinimized);

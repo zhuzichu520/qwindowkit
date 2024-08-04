@@ -6,6 +6,7 @@ project(QWKCore
 set(_src
     qwkglobal.h
     qwkglobal_p.h
+    qwkglobal.cpp
     windowagentbase.h
     windowagentbase_p.h
     windowagentbase.cpp
@@ -85,7 +86,7 @@ if(QWINDOWKIT_ENABLE_STYLE_AGENT)
         list(APPEND _src style/styleagent_linux.cpp)
     endif()
 else()
-    list(APPEND _sync_include_options EXCLUDE "style/\\.+")
+    list(APPEND _sync_include_options EXCLUDE "src/core/style/\\.+")
 endif()
 
 qwk_add_library(${PROJECT_NAME} AUTOGEN
@@ -94,7 +95,7 @@ qwk_add_library(${PROJECT_NAME} AUTOGEN
     LINKS_PRIVATE ${_links_private}
     QT_LINKS Core Gui
     QT_INCLUDE_PRIVATE Core Gui
-    INCLUDE_PRIVATE kernel contexts shared
+    INCLUDE_PRIVATE *
     PREFIX QWK_CORE
     SYNC_INCLUDE_OPTIONS ${_sync_include_options}
 )

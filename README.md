@@ -13,16 +13,16 @@ You can join our [Discord channel](https://discord.gg/grrM4Tmesy). You can share
 
 ## Supported Platforms
 
-+ Microsoft Windows
-+ Apple macOS (11+)
-+ GNU/Linux
+- Microsoft Windows
+- Apple macOS (11+)
+- GNU/Linux
 
 ## Features
 
-+ Full support of Windows 11 Snap Layout
-+ Better workaround to handle Windows 10 top border issue
-+ Support Mac system buttons geometry customization
-+ Simpler APIs, more detailed documentations and comments
+- Full support of Windows 11 Snap Layout
+- Better workaround to handle Windows 10 top border issue
+- Support Mac system buttons geometry customization
+- Simpler APIs, more detailed documentations and comments
 
 ## Gallery
 
@@ -48,39 +48,24 @@ You can join our [Discord channel](https://discord.gg/grrM4Tmesy). You can share
 | Compiler  |  \>=C++17   |   MSVC 2019, GCC, Clang   |
 |   CMake   |   \>=3.19   |   >=3.20 is recommended   |
 
+Please read [Vulnerabilities](#Vulnerabilities) carefully to acquire detailed requirements.
+
 ### Tested Compilers
 
-+ Windows
-    + MSVC: 2019, 2022
-    + MinGW (GCC): 13.2.0
-+ macOS
-    + Clang 14.0.3
-+ Ubuntu
-    + GCC: 9.4.0
+- Windows
+    - MSVC: 2019, 2022
+    - MinGW (GCC): 13.2.0
+- macOS
+    - Clang 14.0.3
+- Ubuntu
+    - GCC: 9.4.0
 
 ## Dependencies
 
-+ Qt 5.12 or higher
-+ [qmsetup](https://github.com/stdware/qmsetup)
+- Qt 5.12 or higher
+- [qmsetup](https://github.com/stdware/qmsetup)
 
 ## Integrate
-
-### Configure Options
-
-+ `QWINDOWKIT_BUILD_DOCUMENTATIONS`
-    + If you have installed `Doxygen`, you can **enable** this option so that the documentations will also be built and installed.
-    + If not, you can read the comments in *qdoc* style in `cpp` files to get detailed usages of the public APIs.
-
-+ `QWINDOWKIT_ENABLE_WINDOWS_SYSTEM_BORDERS`
-    + If you don't want the system borders on Windows 10/11, you can **disable** this option.
-    + If so, the Windows 10 top border issue will disappear. However, part of the client edge area will be occupied as the resizing margins.
-
-+ `QWINDOWKIT_ENABLE_QT_WINDOW_CONTEXT`
-    + If you want to use pure Qt emulated frameless implementation, you can **enable** this option.
-    + If so, all system native features will be lost.
-
-+ `QWINDOWKIT_ENABLE_STYLE_AGENT`
-    + Select whether to exclude the style component by **disabling** this option according to your requirements and your Qt version.
 
 ### Build & Install
 
@@ -96,22 +81,20 @@ cmake -B build -S . \
 cmake --build build --target install --config Debug
 cmake --build build --target install --config Release
 ```
-
 You can also include this directory as a subproject if you choose CMake as your build system.
 
-For other build systems, you need to install with CMake first and include the corresponding configuration files in your
-project.
+For other build systems, you need to install with CMake first and include the corresponding configuration files in your project.
 
 ### Import
 
 #### CMake Project
 
 ```sh
-cmake -B build -DQWindowKit_DIR=/path/install/cmake/QWindowKit
+cmake -B build -DQWindowKit_DIR=/path/install/lib/cmake/QWindowKit
 ```
 
 ```cmake
-find_package(QWindowKit REQUIRED)
+find_package(QWindowKit COMPONENTS Core Widgets Quick REQUIRED)
 target_link_libraries(widgets_app PUBLIC QWindowKit::Widgets)
 target_link_libraries(quick_app PUBLIC QWindowKit::Quick)
 ```
@@ -128,7 +111,7 @@ include("/path/install/share/QWindowKit/qmake/QWKQuick.pri")
 
 #### Visual Studio Project
 
-TODO
+See [Visual Studio Guide](./docs/visual-studio-guide.md) for detailed usages.
 
 ## Quick Start
 
@@ -139,7 +122,7 @@ TODO
 The following initialization should be done before any widget constructs.
 
 ```cpp
-#include <QWKQuick/qwkquickglobal.h>
+#include <QtWidgets/QApplication>
 
 int main(int argc, char *argv[])
 {
@@ -173,6 +156,8 @@ auto agent = new QWK::WidgetWindowAgent(w);
 agent->setup(w);
 ```
 
+You should call `QWK::WidgetWindowAgent::setup()` as early as possible, especially when you need to set the size constrains. QWindowKit will change some Qt internal data which will affect how Qt calculates the window size, and thus you need to let QWindowKit initialize at the very beginning.
+
 #### Construct Title bar
 
 Then, construct your title bar widget, without which the window lacks the basic interaction feature, and it's better to
@@ -201,13 +186,15 @@ Doing this does not mean that these buttons' click events are automatically asso
 
 On macOS, this step can be skipped because it is better to use the buttons provided by the system.
 
-Last but not least, set hit-test visible hint to let `WidgetWindowAgent` know other widgets that desire to receive mouse events.
+Last but not least, set hit-test visible hint to let `WidgetWindowAgent` know which widgets are willing to receive mouse events.
 
 ```c++
 agent->setHitTestVisible(myTitleBar->menuBar(), true);
 ```
 
-The rest region within the title bar will be regarded as the draggable area for the user to move the window.
+The rest region within the title bar will be regarded as the draggable area for the user to move the window, and thus any QWidgets inside it will not receive any user interaction events such as mouse events/focus events/etc anymore, but you can still send/post such events to these widgets manually, either through Qt API or system API.
+
+- If you want to disable window maximization, you can remove the `Qt::WindowMaximizeButtonHint` flag from the window.
 
 <!-- #### Window Attributes (Experimental)
 
@@ -240,7 +227,7 @@ int main(int argc, char *argv[])
 
 #### Setup Window Components
 
-Then you can use `QWindowKit` data types and classes by importing it's URI:
+Then you can use `QWindowKit` data types and classes by importing its URI:
 
 ```qml
 import QtQuick 2.15
@@ -263,30 +250,52 @@ Window {
 
 You can omit the version number or use "auto" instead of "1.0" for the module URI if you are using Qt6.
 
+As we just mentioned above, if you are going to set the size constrains, please do it after `windowAgent.setup()` is called.
+
 ### Learn More
 
 See [examples](examples) for more demo use cases. The examples have no High DPI support.
 
-+ QWindowKit Internals [TODO]
-+ [FramelessHelper Related](docs/framelesshelper-related.md)
+- QWindowKit Internals [TODO]
+- [FramelessHelper Related](docs/framelesshelper-related.md)
 
 
 ### Vulnerabilities
 
-+ Once you have made the window frameless, it will not be able to switch back to the system border.
-+ There must not be any internal child widget with `Qt::WA_NativeWindow` property enabled, otherwise the native features and display may be abnormal. Therefore, do not set any widget that has called `QWidget::winId()` or `QWidget::setAttribute(Qt::WA_NativeWindow)` as a descendant of a frameless window.
-    + If you really need to move widgets between different windows, make sure that the widget is not a top-level window and wrap it with a frameless container.
+#### Qt Version
+- To achieve better frameless functionality, QWindowKit depends heavily on Qt's internal implementation. However, there are many differences in different versions of Qt, and earlier versions of Qt5 and Qt6 have many bugs which make it extremely difficult for QWindowKit to workaround without changing the Qt source code.
+- And also due to limited manpower, although QWindowKit can be successfully compiled on Qt 5.12 or later, it can hardly work perfectly on all Qt versions.
+- Therefore, the following Qt version ranges are recommended, if there are any exceptions with QWindowKit in your application, make sure the Qt version you use is in the ranges before raising the issue.
+    - Qt 5: 5.15.2 or higher
+    - Qt 6: 6.6.2 or higher (the newer, the better)
+
+#### Hot Switch
+- Once you have made the window frameless, it will not be able to switch back to the system frame again unless you destroy your window and recreate it with different settings.
+
+#### Native Child Widget
+- There **must not** be any internal child widget with `Qt::WA_NativeWindow` property enabled, otherwise the native features and display may be abnormal. Therefore, do not set any widget that has called `QWidget::winId()` or `QWidget::setAttribute(Qt::WA_NativeWindow)` as a descendant of a frameless window.
+    - If you really need to move widgets between different windows, make sure that the widget is not a top-level window and wrap it with a frameless container window.
+
+#### Size Constrains
+- If you want to disable window resizing, you can set a fixed size, which is officially supported by QWindowKit. If you use other special means to achieve this, QWK doesn't guarantee everything can still be fully functional.
+- If you set a maximized width or height, the window should not be maximized because you cannot get the correct window size through Qt APIs. You may workaround this by using system APIs such as `GetWindowRect` or `GetClientRect`. The root cause lies deep in Qt QPA implementations and currently we don't know how to fix it without modifying Qt itself.
+
+#### Windows 10
+
+- Due to the inherent defects in the Windows 10 window system, the top border will disappear when the system title bar is removed. We have filtered Qt's event and perfectly reshown the system top border, thanks to the implementation of Windows Terminal for our reference. However, this workaround only works with QtWidgets and QtQuick (**only when rendering through D3D**) applications.
+
+- In QtQuick applications that use OpenGL or other rendering backends, we use Qt's painting system to emulate this border. But since Windows 10 system border is translucent, the difference from the system border is more noticeable in a dark background.
 
 ## TODO
 
-+ Fix 5.15 window abnormal behavior
-+ More documentations
-+ When do we support Linux native features?
+- Fix mouse cursor mapping issues
+- More documentations
+- When do we support Linux native features?
 
 ## Special Thanks
 
-+ [Maplespe](https://github.com/Maplespe)
-+ [zhiyiYo](https://github.com/zhiyiYo)
+- [Maplespe](https://github.com/Maplespe)
+- [zhiyiYo](https://github.com/zhiyiYo)
 
 ## License
 

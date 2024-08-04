@@ -35,6 +35,12 @@
 
 namespace QWK {
 
+    enum IconButtonClickLevelFlag {
+        IconButtonClicked = 1,
+        IconButtonDoubleClicked = 2,
+        IconButtonTriggersClose = 4,
+    };
+
     // The thickness of an auto-hide taskbar in pixels.
     static constexpr const quint8 kAutoHideTaskBarThickness = 2;
 
@@ -75,6 +81,8 @@ namespace QWK {
 
     static void setInternalWindowFrameMargins(QWindow *window, const QMargins &margins) {
         const QVariant marginsVar = QVariant::fromValue(margins);
+
+        // TODO: Add comments
         window->setProperty("_q_windowsCustomMargins", marginsVar);
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         if (QPlatformWindow *platformWindow = window->handle()) {
@@ -118,6 +126,36 @@ namespace QWK {
                        SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
     }
 
+    static inline bool isFullScreen(HWND hwnd) {
+        RECT windowRect{};
+        ::GetWindowRect(hwnd, &windowRect);
+        // Compare to the full area of the screen, not the work area.
+        return (windowRect == getMonitorForWindow(hwnd).rcMonitor);
+    }
+
+    static inline bool isMaximized(HWND hwnd) {
+        return ::IsZoomed(hwnd);
+    }
+
+    static inline bool isMinimized(HWND hwnd) {
+        return ::IsIconic(hwnd);
+    }
+
+    static inline bool isWindowNoState(HWND hwnd) {
+#if 0
+        WINDOWPLACEMENT wp{};
+        wp.length = sizeof(wp);
+        ::GetWindowPlacement(hwnd, &wp);
+        return ((wp.showCmd == SW_NORMAL) || (wp.showCmd == SW_RESTORE));
+#else
+        if (isFullScreen(hwnd)) {
+            return false;
+        }
+        const auto style = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_STYLE));
+        return (!(style & (WS_MINIMIZE | WS_MAXIMIZE)));
+#endif
+    }
+
     static inline void bringWindowToFront(HWND hwnd) {
         HWND oldForegroundWindow = ::GetForegroundWindow();
         if (!oldForegroundWindow) {
@@ -129,7 +167,7 @@ namespace QWK {
         if (!::IsWindowVisible(hwnd)) {
             ::ShowWindow(hwnd, SW_SHOW);
         }
-        if (IsMinimized(hwnd)) {
+        if (isMinimized(hwnd)) {
             // Restore the window if it is minimized.
             ::ShowWindow(hwnd, SW_RESTORE);
             // Once we've been restored, throw us on the active monitor.
@@ -164,28 +202,6 @@ namespace QWK {
         ::SetActiveWindow(hwnd);
         // Throw us on the active monitor.
         moveWindowToMonitor(hwnd, activeMonitor);
-    }
-
-    static inline bool isFullScreen(HWND hwnd) {
-        RECT windowRect{};
-        ::GetWindowRect(hwnd, &windowRect);
-        // Compare to the full area of the screen, not the work area.
-        return (windowRect == getMonitorForWindow(hwnd).rcMonitor);
-    }
-
-    static inline bool isWindowNoState(HWND hwnd) {
-#if 0
-        WINDOWPLACEMENT wp{};
-        wp.length = sizeof(wp);
-        ::GetWindowPlacement(hwnd, &wp);
-        return ((wp.showCmd == SW_NORMAL) || (wp.showCmd == SW_RESTORE));
-#else
-        if (isFullScreen(hwnd)) {
-            return false;
-        }
-        const auto style = static_cast<DWORD>(::GetWindowLongPtrW(hwnd, GWL_STYLE));
-        return (!(style & (WS_MINIMIZE | WS_MAXIMIZE)));
-#endif
     }
 
     static void syncPaintEventWithDwm() {
@@ -233,17 +249,18 @@ namespace QWK {
         apis.ptimeEndPeriod(ms_granularity);
     }
 
-    static void showSystemMenu2(HWND hWnd, const POINT &pos, const bool selectFirstEntry,
-                                const bool fixedSize) {
+    // Returns false if the menu is canceled
+    static bool showSystemMenu_sys(HWND hWnd, const POINT &pos, const bool selectFirstEntry,
+                                   const bool fixedSize) {
         HMENU hMenu = ::GetSystemMenu(hWnd, FALSE);
         if (!hMenu) {
             // The corresponding window doesn't have a system menu, most likely due to the
             // lack of the "WS_SYSMENU" window style. This situation should not be treated
             // as an error so just ignore it and return early.
-            return;
+            return true;
         }
 
-        const bool maxOrFull = IsMaximized(hWnd) || isFullScreen(hWnd);
+        const bool maxOrFull = isMaximized(hWnd) || isFullScreen(hWnd);
         ::EnableMenuItem(hMenu, SC_CLOSE, (MF_BYCOMMAND | MFS_ENABLED));
         ::EnableMenuItem(hMenu, SC_MAXIMIZE,
                          (MF_BYCOMMAND | ((maxOrFull || fixedSize) ? MFS_DISABLED : MFS_ENABLED)));
@@ -284,7 +301,8 @@ namespace QWK {
         // Popup the system menu at the required position.
         const auto result = ::TrackPopupMenu(
             hMenu,
-            (TPM_RETURNCMD | (QGuiApplication::isRightToLeft() ? TPM_RIGHTALIGN : TPM_LEFTALIGN)),
+            (TPM_RETURNCMD | (QGuiApplication::isRightToLeft() ? TPM_RIGHTALIGN : TPM_LEFTALIGN) |
+             TPM_RIGHTBUTTON),
             pos.x, pos.y, 0, hWnd, nullptr);
 
         // Unhighlight the first menu item after the popup menu is closed, otherwise it will keep
@@ -293,11 +311,12 @@ namespace QWK {
 
         if (!result) {
             // The user canceled the menu, no need to continue.
-            return;
+            return false;
         }
 
         // Send the command that the user chooses to the corresponding window.
         ::PostMessageW(hWnd, WM_SYSCOMMAND, result, 0);
+        return true;
     }
 
     static inline Win32WindowContext::WindowPart getHitWindowPart(int hitTestResult) {
@@ -616,6 +635,7 @@ namespace QWK {
         // Try hooked procedure and save result
         LRESULT result;
         if (ctx->windowProc(hWnd, message, wParam, lParam, &result)) {
+            // https://github.com/stdware/qwindowkit/issues/45
             // Forward the event to user-defined native event filters, there may be some messages
             // that need to be processed by the user.
             std::ignore =
@@ -690,12 +710,12 @@ namespace QWK {
                 auto hWnd = reinterpret_cast<HWND>(m_windowId);
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
                 const QPoint nativeGlobalPos =
-                    QHighDpi::toNativeGlobalPosition(pos, m_windowHandle);
+                    QHighDpi::toNativeGlobalPosition(pos, m_windowHandle.data());
 #else
-                const QPoint nativeGlobalPos = QHighDpi::toNativePixels(pos, m_windowHandle);
+                const QPoint nativeGlobalPos = QHighDpi::toNativePixels(pos, m_windowHandle.data());
 #endif
-                showSystemMenu2(hWnd, qpoint2point(nativeGlobalPos), false,
-                                m_delegate->isHostSizeFixed(m_host));
+                std::ignore = showSystemMenu_sys(hWnd, qpoint2point(nativeGlobalPos), false,
+                                                 isHostSizeFixed());
                 return;
             }
 
@@ -814,6 +834,11 @@ namespace QWK {
                        : 0;
         }
 
+        if (key == QStringLiteral("title-bar-height")) {
+            return m_windowId
+                       ? int(getTitleBarHeight(reinterpret_cast<HWND>(m_windowId)))
+                       : 0;
+        }
         return AbstractWindowContext::windowAttribute(key);
     }
 
@@ -821,6 +846,7 @@ namespace QWK {
         // Reset the context data
         mouseLeaveBlocked = false;
         lastHitTestResult = WindowPart::Outside;
+        lastHitTestResultRaw = HTNOWHERE;
 
         if (!isSystemBorderEnabled()) {
             m_delegate->setWindowFlags(m_host, m_delegate->getWindowFlags(m_host) |
@@ -1254,7 +1280,7 @@ namespace QWK {
                     POINT screenPoint{GET_X_LPARAM(dwScreenPos), GET_Y_LPARAM(dwScreenPos)};
                     ::ScreenToClient(hWnd, &screenPoint);
                     QPoint qtScenePos = QHighDpi::fromNativeLocalPosition(point2qpoint(screenPoint),
-                                                                          m_windowHandle);
+                                                                          m_windowHandle.data());
                     auto dummy = WindowAgentBase::Unknown;
                     if (isInSystemButtons(qtScenePos, &dummy)) {
                         // We must record whether the last WM_MOUSELEAVE was filtered, because if
@@ -1299,9 +1325,8 @@ namespace QWK {
     case WM_NCPOINTERUP:
 #endif
             case WM_NCMOUSEHOVER: {
-                const WindowPart currentWindowPart = lastHitTestResult;
                 if (message == WM_NCMOUSEMOVE) {
-                    if (currentWindowPart != WindowPart::ChromeButton) {
+                    if (lastHitTestResult != WindowPart::ChromeButton) {
                         // https://github.com/qt/qtbase/blob/e26a87f1ecc40bc8c6aa5b889fce67410a57a702/src/widgets/kernel/qwidgetwindow.cpp#L472
                         // When the mouse press event arrives, QWidgetWindow will implicitly grab
                         // the top widget right under the mouse, and set `qt_button_down` to this
@@ -1360,14 +1385,50 @@ namespace QWK {
                     }
                 }
 
-                if (currentWindowPart == WindowPart::ChromeButton) {
-                    emulateClientAreaMessage(hWnd, message, wParam, lParam);
+                if (lastHitTestResult == WindowPart::ChromeButton) {
                     if (message == WM_NCMOUSEMOVE) {
                         // ### FIXME FIXME FIXME
                         // ### FIXME: Calling DefWindowProc() here is really dangerous, investigate
                         // how to avoid doing this.
                         // ### FIXME FIXME FIXME
                         *result = ::DefWindowProcW(hWnd, WM_NCMOUSEMOVE, wParam, lParam);
+                        emulateClientAreaMessage(hWnd, message, wParam, lParam);
+                        return true;
+                    }
+
+                    if (lastHitTestResultRaw == HTSYSMENU) {
+                        switch (message) {
+                            case WM_NCLBUTTONDOWN:
+                                if (iconButtonClickLevel == 0) {
+                                    // A message of WM_SYSCOMMAND with SC_MOUSEMENU will be sent by
+                                    // Windows, and the current control flow will be blocked by the
+                                    // menu while Windows will create and execute a new event loop
+                                    // until the menu returns
+                                    iconButtonClickTime = ::GetTickCount64();
+                                    *result = ::DefWindowProcW(hWnd, message, wParam, lParam);
+                                    iconButtonClickTime = 0;
+                                    if (iconButtonClickLevel & IconButtonTriggersClose) {
+                                        ::PostMessageW(hWnd, WM_SYSCOMMAND, SC_CLOSE, 0);
+                                    }
+                                    if (iconButtonClickLevel & IconButtonDoubleClicked) {
+                                        iconButtonClickLevel = 0;
+                                    }
+                                    // Otherwise, no need to reset `iconButtonClickLevel` if not to
+                                    // close, if it has value, there must be another incoming
+                                    // WM_NCLBUTTONDOWN
+                                } else {
+                                    iconButtonClickLevel = 0;
+                                }
+                                break;
+                            case WM_NCLBUTTONDBLCLK:
+                                // A message of WM_SYSCOMMAND with SC_CLOSE will be sent by Windows
+                                *result = ::DefWindowProcW(hWnd, message, wParam, lParam);
+                                break;
+                            default:
+                                *result = FALSE;
+                                emulateClientAreaMessage(hWnd, message, wParam, lParam);
+                                break;
+                        }
                     } else {
                         // According to MSDN, we should return non-zero for X button messages to
                         // indicate we have handled these messages (due to historical reasons), for
@@ -1376,6 +1437,7 @@ namespace QWK {
                             (((message >= WM_NCXBUTTONDOWN) && (message <= WM_NCXBUTTONDBLCLK))
                                  ? TRUE
                                  : FALSE);
+                        emulateClientAreaMessage(hWnd, message, wParam, lParam);
                     }
                     return true;
                 }
@@ -1505,7 +1567,8 @@ namespace QWK {
                 // color, our homemade top border can almost have exactly the same
                 // appearance with the system's one.
                 [[maybe_unused]] const auto &hitTestRecorder = qScopeGuard([this, result]() {
-                    lastHitTestResult = getHitWindowPart(int(*result)); //
+                    lastHitTestResultRaw = int(*result);
+                    lastHitTestResult = getHitWindowPart(lastHitTestResultRaw);
                 });
 
                 POINT nativeGlobalPos{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
@@ -1517,15 +1580,24 @@ namespace QWK {
                 auto clientWidth = RECT_WIDTH(clientRect);
                 auto clientHeight = RECT_HEIGHT(clientRect);
 
-                QPoint qtScenePos =
-                    QHighDpi::fromNativeLocalPosition(point2qpoint(nativeLocalPos), m_windowHandle);
+                QPoint qtScenePos = QHighDpi::fromNativeLocalPosition(point2qpoint(nativeLocalPos),
+                                                                      m_windowHandle.data());
 
-                bool isFixedSize = m_delegate->isHostSizeFixed(m_host);
-                bool isTitleBar = isInTitleBarDraggableArea(qtScenePos);
+                int frameSize = getResizeBorderThickness(hWnd);
+
+                bool isFixedWidth = isHostWidthFixed();
+                bool isFixedHeight = isHostHeightFixed();
+                bool isFixedSize = isHostSizeFixed();
+                bool isInLeftBorder = nativeLocalPos.x <= frameSize;
+                bool isInTopBorder = nativeLocalPos.y <= frameSize;
+                bool isInRightBorder = nativeLocalPos.x > clientWidth - frameSize;
+                bool isInBottomBorder = nativeLocalPos.y > clientHeight - frameSize;
+                bool isInTitleBar = isInTitleBarDraggableArea(qtScenePos);
+                WindowAgentBase::SystemButton sysButtonType = WindowAgentBase::Unknown;
+                bool isInCaptionButtons = isInSystemButtons(qtScenePos, &sysButtonType);
                 bool dontOverrideCursor = false; // ### TODO
 
-                WindowAgentBase::SystemButton sysButtonType = WindowAgentBase::Unknown;
-                if (!isFixedSize && isInSystemButtons(qtScenePos, &sysButtonType)) {
+                if (isInCaptionButtons) {
                     // Firstly, we set the hit test result to a default value to be able to detect
                     // whether we have changed it or not afterwards.
                     *result = HTNOWHERE;
@@ -1535,29 +1607,41 @@ namespace QWK {
                     // window is not maximized/fullscreen/minimized, of course).
                     if (isWindowNoState(hWnd)) {
                         static constexpr const quint8 kBorderSize = 2;
-                        bool isTop = (nativeLocalPos.y <= kBorderSize);
+                        bool isTop = nativeLocalPos.y <= kBorderSize;
                         bool isLeft = nativeLocalPos.x <= kBorderSize;
-                        bool isRight = (nativeLocalPos.x >= (clientWidth - kBorderSize));
+                        bool isRight = nativeLocalPos.x > clientWidth - kBorderSize;
                         if (isTop || isLeft || isRight) {
-                            if (dontOverrideCursor) {
+                            if (isFixedSize || dontOverrideCursor) {
                                 // The user doesn't want the window to be resized, so we tell
                                 // Windows we are in the client area so that the controls beneath
                                 // the mouse cursor can still be hovered or clicked.
-                                *result = (isTitleBar ? HTCAPTION : HTCLIENT);
+                                *result = isInTitleBar ? HTCAPTION : HTCLIENT;
                             } else {
                                 if (isTop) {
                                     if (isLeft) {
-                                        *result = HTTOPLEFT;
+                                        if (isFixedWidth) {
+                                            *result = HTTOP;
+                                        } else if (isFixedHeight) {
+                                            *result = HTLEFT;
+                                        } else {
+                                            *result = HTTOPLEFT;
+                                        }
                                     } else if (isRight) {
-                                        *result = HTTOPRIGHT;
+                                        if (isFixedWidth) {
+                                            *result = HTTOP;
+                                        } else if (isFixedHeight) {
+                                            *result = HTRIGHT;
+                                        } else {
+                                            *result = HTTOPRIGHT;
+                                        }
                                     } else {
-                                        *result = HTTOP;
+                                        *result = isFixedHeight ? HTBORDER : HTTOP;
                                     }
                                 } else {
-                                    if (isLeft) {
-                                        *result = HTLEFT;
+                                    if (isFixedWidth) {
+                                        *result = HTBORDER;
                                     } else {
-                                        *result = HTRIGHT;
+                                        *result = isLeft ? HTLEFT : HTRIGHT;
                                     }
                                 }
                             }
@@ -1599,10 +1683,8 @@ namespace QWK {
                 // OK, we are not inside any chrome buttons, try to find out which part of the
                 // window are we hitting.
 
-                bool max = IsMaximized(hWnd);
+                bool max = isMaximized(hWnd);
                 bool full = isFullScreen(hWnd);
-                int frameSize = getResizeBorderThickness(hWnd);
-                bool isTop = (nativeLocalPos.y < frameSize);
 
                 if (isSystemBorderEnabled()) {
                     // This will handle the left, right and bottom parts of the frame
@@ -1614,8 +1696,48 @@ namespace QWK {
                         // outside the window, that is, the three transparent window resize area.
                         // Returning HTCLIENT will confuse Windows, we can't put our controls there
                         // anyway.
-                        *result = ((isFixedSize || dontOverrideCursor) ? HTBORDER
-                                                                       : originalHitTestResult);
+                        *result = HTNOWHERE; // Make sure we can know we don't set any value explicitly later.
+                        if (originalHitTestResult == HTCAPTION) {
+                        } else if (isFixedSize || dontOverrideCursor) {
+                            *result = HTBORDER;
+                        } else if (isFixedWidth || isFixedHeight) {
+                            if (originalHitTestResult == HTTOPLEFT) {
+                                if (isFixedWidth) {
+                                    *result = HTTOP;
+                                } else {
+                                    *result = HTLEFT;
+                                }
+                            } else if (originalHitTestResult == HTTOPRIGHT) {
+                                if (isFixedWidth) {
+                                    *result = HTTOP;
+                                } else {
+                                    *result = HTRIGHT;
+                                }
+                            } else if (originalHitTestResult == HTBOTTOMRIGHT) {
+                                if (isFixedWidth) {
+                                    *result = HTBOTTOM;
+                                } else {
+                                    *result = HTRIGHT;
+                                }
+                            } else if (originalHitTestResult == HTBOTTOMLEFT) {
+                                if (isFixedWidth) {
+                                    *result = HTBOTTOM;
+                                } else {
+                                    *result = HTLEFT;
+                                }
+                            } else if (originalHitTestResult == HTLEFT || originalHitTestResult == HTRIGHT) {
+                                if (isFixedWidth) {
+                                    *result = HTBORDER;
+                                }
+                            } else if (originalHitTestResult == HTTOP || originalHitTestResult == HTBOTTOM) {
+                                if (isFixedHeight) {
+                                    *result = HTBORDER;
+                                }
+                            }
+                        }
+                        if (*result == HTNOWHERE) {
+                            *result = originalHitTestResult;
+                        }
                         return true;
                     }
                     if (full) {
@@ -1623,7 +1745,7 @@ namespace QWK {
                         return true;
                     }
                     if (max) {
-                        *result = (isTitleBar ? HTCAPTION : HTCLIENT);
+                        *result = isInTitleBar ? HTCAPTION : HTCLIENT;
                         return true;
                     }
                     // At this point, we know that the cursor is inside the client area,
@@ -1631,16 +1753,24 @@ namespace QWK {
                     // title bar or the drag bar. Apparently, it must be the drag bar or
                     // the little border at the top which the user can use to move or
                     // resize the window.
-                    if (isTop) {
+                    if (isInTopBorder) {
                         // Return HTCLIENT instead of HTBORDER here, because the mouse is
                         // inside our homemade title bar now, return HTCLIENT to let our
                         // title bar can still capture mouse events.
-                        *result = ((isFixedSize || dontOverrideCursor)
-                                       ? (isTitleBar ? HTCAPTION : HTCLIENT)
-                                       : HTTOP);
+                        *result = [&]() {
+                            if (isFixedSize || isFixedHeight || dontOverrideCursor || (isFixedWidth && (isInLeftBorder || isInRightBorder))) {
+                                if (isInTitleBar) {
+                                    return HTCAPTION;
+                                } else {
+                                    return HTCLIENT;
+                                }
+                            } else {
+                                return HTTOP;
+                            }
+                        }();
                         return true;
                     }
-                    if (isTitleBar) {
+                    if (isInTitleBar) {
                         *result = HTCAPTION;
                         return true;
                     }
@@ -1651,58 +1781,86 @@ namespace QWK {
                         *result = HTCLIENT;
                         return true;
                     }
-                    if (max) {
-                        *result = (isTitleBar ? HTCAPTION : HTCLIENT);
+                    if (max || isFixedSize || dontOverrideCursor) {
+                        *result = isInTitleBar ? HTCAPTION : HTCLIENT;
                         return true;
                     }
-                    if (!isFixedSize) {
-                        const bool isBottom = (nativeLocalPos.y >= (clientHeight - frameSize));
-                        // Make the border a little wider to let the user easy to resize on corners.
-                        const auto scaleFactor = ((isTop || isBottom) ? qreal(2) : qreal(1));
-                        const int scaledFrameSize = std::round(qreal(frameSize) * scaleFactor);
-                        const bool isLeft = (nativeLocalPos.x < scaledFrameSize);
-                        const bool isRight = (nativeLocalPos.x >= (clientWidth - scaledFrameSize));
-                        if (dontOverrideCursor && (isTop || isBottom || isLeft || isRight)) {
-                            // Return HTCLIENT instead of HTBORDER here, because the mouse is
-                            // inside the window now, return HTCLIENT to let the controls
-                            // inside our window can still capture mouse events.
-                            *result = (isTitleBar ? HTCAPTION : HTCLIENT);
-                            return true;
+                    if (isFixedWidth || isFixedHeight) {
+                        if (isInLeftBorder && isInTopBorder) {
+                            if (isFixedWidth) {
+                                *result = HTTOP;
+                            } else {
+                                *result = HTLEFT;
+                            }
+                        } else if (isInRightBorder && isInTopBorder) {
+                            if (isFixedWidth) {
+                                *result = HTTOP;
+                            } else {
+                                *result = HTRIGHT;
+                            }
+                        } else if (isInRightBorder && isInBottomBorder) {
+                            if (isFixedWidth) {
+                                *result = HTBOTTOM;
+                            } else {
+                                *result = HTRIGHT;
+                            }
+                        } else if (isInLeftBorder && isInBottomBorder) {
+                            if (isFixedWidth) {
+                                *result = HTBOTTOM;
+                            } else {
+                                *result = HTLEFT;
+                            }
+                        } else if (isInLeftBorder || isInRightBorder) {
+                            if (isFixedWidth) {
+                                *result = HTCLIENT;
+                            } else {
+                                *result = isInLeftBorder ? HTLEFT : HTRIGHT;
+                            }
+                        } else if (isInTopBorder || isInBottomBorder) {
+                            if (isFixedHeight) {
+                                *result = HTCLIENT;
+                            } else {
+                                *result = isInTopBorder ? HTTOP : HTBOTTOM;
+                            }
+                        } else {
+                            *result = HTCLIENT;
                         }
-                        if (isTop) {
-                            if (isLeft) {
+                        return true;
+                    } else {
+                        if (isInTopBorder) {
+                            if (isInLeftBorder) {
                                 *result = HTTOPLEFT;
                                 return true;
                             }
-                            if (isRight) {
+                            if (isInRightBorder) {
                                 *result = HTTOPRIGHT;
                                 return true;
                             }
                             *result = HTTOP;
                             return true;
                         }
-                        if (isBottom) {
-                            if (isLeft) {
+                        if (isInBottomBorder) {
+                            if (isInLeftBorder) {
                                 *result = HTBOTTOMLEFT;
                                 return true;
                             }
-                            if (isRight) {
+                            if (isInRightBorder) {
                                 *result = HTBOTTOMRIGHT;
                                 return true;
                             }
                             *result = HTBOTTOM;
                             return true;
                         }
-                        if (isLeft) {
+                        if (isInLeftBorder) {
                             *result = HTLEFT;
                             return true;
                         }
-                        if (isRight) {
+                        if (isInRightBorder) {
                             *result = HTRIGHT;
                             return true;
                         }
                     }
-                    if (isTitleBar) {
+                    if (isInTitleBar) {
                         *result = HTCAPTION;
                         return true;
                     }
@@ -1895,9 +2053,9 @@ namespace QWK {
             // that's also how most applications customize their title bars on Windows. It's
             // totally OK but since we want to preserve as much original frame as possible,
             // we can't use that solution.
-            const LRESULT hitTestResult = ::DefWindowProcW(hWnd, WM_NCCALCSIZE, wParam, lParam);
-            if ((hitTestResult != HTERROR) && (hitTestResult != HTNOWHERE)) {
-                *result = hitTestResult;
+            const LRESULT originalResult = ::DefWindowProcW(hWnd, WM_NCCALCSIZE, wParam, lParam);
+            if (originalResult != 0) {
+                *result = originalResult;
                 return true;
             }
             // Re-apply the original top from before the size of the default frame was
@@ -1911,7 +2069,7 @@ namespace QWK {
             clientRect->top = originalTop;
         }
 
-        const bool max = IsMaximized(hWnd);
+        const bool max = isMaximized(hWnd);
         const bool full = isFullScreen(hWnd);
         // We don't need this correction when we're fullscreen. We will
         // have the WS_POPUP size, so we don't have to worry about
@@ -2026,7 +2184,7 @@ namespace QWK {
             return {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         };
         const auto getNativeGlobalPosFromKeyboard = [hWnd]() -> POINT {
-            const bool maxOrFull = IsMaximized(hWnd) || isFullScreen(hWnd);
+            const bool maxOrFull = isMaximized(hWnd) || isFullScreen(hWnd);
             const quint32 frameSize = getResizeBorderThickness(hWnd);
             const quint32 horizontalOffset =
                 ((maxOrFull || !isSystemBorderEnabled()) ? 0 : frameSize);
@@ -2054,12 +2212,16 @@ namespace QWK {
         bool shouldShowSystemMenu = false;
         bool broughtByKeyboard = false;
         POINT nativeGlobalPos{};
+
         switch (message) {
             case WM_RBUTTONUP: {
                 const POINT nativeLocalPos = getNativePosFromMouse();
-                const QPoint qtScenePos =
-                    QHighDpi::fromNativeLocalPosition(point2qpoint(nativeLocalPos), m_windowHandle);
-                if (isInTitleBarDraggableArea(qtScenePos)) {
+                const QPoint qtScenePos = QHighDpi::fromNativeLocalPosition(
+                    point2qpoint(nativeLocalPos), m_windowHandle.data());
+                WindowAgentBase::SystemButton sysButtonType = WindowAgentBase::Unknown;
+                if (isInTitleBarDraggableArea(qtScenePos) ||
+                    (isInSystemButtons(qtScenePos, &sysButtonType) &&
+                     sysButtonType == WindowAgentBase::WindowIcon)) {
                     shouldShowSystemMenu = true;
                     nativeGlobalPos = nativeLocalPos;
                     ::ClientToScreen(hWnd, &nativeGlobalPos);
@@ -2075,10 +2237,20 @@ namespace QWK {
             }
             case WM_SYSCOMMAND: {
                 const WPARAM filteredWParam = (wParam & 0xFFF0);
-                if ((filteredWParam == SC_KEYMENU) && (lParam == VK_SPACE)) {
-                    shouldShowSystemMenu = true;
-                    broughtByKeyboard = true;
-                    nativeGlobalPos = getNativeGlobalPosFromKeyboard();
+                switch (filteredWParam) {
+                    case SC_MOUSEMENU:
+                        shouldShowSystemMenu = true;
+                        nativeGlobalPos = getNativeGlobalPosFromKeyboard();
+                        break;
+                    case SC_KEYMENU:
+                        if (lParam == VK_SPACE) {
+                            shouldShowSystemMenu = true;
+                            broughtByKeyboard = true;
+                            nativeGlobalPos = getNativeGlobalPosFromKeyboard();
+                        }
+                        break;
+                    default:
+                        break;
                 }
                 break;
             }
@@ -2097,8 +2269,86 @@ namespace QWK {
                 break;
         }
         if (shouldShowSystemMenu) {
-            showSystemMenu2(hWnd, nativeGlobalPos, broughtByKeyboard,
-                            m_delegate->isHostSizeFixed(m_host));
+            static HHOOK mouseHook = nullptr;
+            static std::optional<POINT> mouseClickPos;
+            static bool mouseDoubleClicked = false;
+            bool mouseHookedLocal = false;
+
+            // The menu is triggered by a click on icon button
+            if (iconButtonClickTime > 0) {
+                POINT menuPos{0, static_cast<LONG>(getTitleBarHeight(hWnd))};
+                if (const auto tb = titleBar()) {
+                    auto titleBarHeight = qreal(m_delegate->mapGeometryToScene(tb).height());
+                    titleBarHeight *= m_windowHandle->devicePixelRatio();
+                    menuPos.y = qRound(titleBarHeight);
+                }
+                ::ClientToScreen(hWnd, &menuPos);
+                nativeGlobalPos = menuPos;
+
+                // Install mouse hook
+                if (!mouseHook) {
+                    mouseHook = ::SetWindowsHookExW(
+                        WH_MOUSE,
+                        [](int nCode, WPARAM wParam, LPARAM lParam) {
+                            if (nCode >= 0) {
+                                switch (wParam) {
+                                    case WM_LBUTTONDBLCLK:
+                                        mouseDoubleClicked = true;
+                                        Q_FALLTHROUGH();
+
+                                        // case WM_POINTERDOWN:
+
+                                    case WM_LBUTTONDOWN: {
+                                        auto pMouseStruct =
+                                            reinterpret_cast<MOUSEHOOKSTRUCT *>(lParam);
+                                        if (pMouseStruct) {
+                                            mouseClickPos = pMouseStruct->pt;
+                                        }
+                                        break;
+                                    }
+                                    default:
+                                        break;
+                                }
+                            }
+                            return ::CallNextHookEx(nullptr, nCode, wParam, lParam);
+                        },
+                        nullptr, ::GetCurrentThreadId());
+                    mouseHookedLocal = true;
+                }
+            }
+
+            bool res =
+                showSystemMenu_sys(hWnd, nativeGlobalPos, broughtByKeyboard, isHostSizeFixed());
+
+            // Uninstall mouse hook and check if it's a double-click
+            if (mouseHookedLocal) {
+                ::UnhookWindowsHookEx(mouseHook);
+
+                // Emulate the Windows icon button's behavior
+                if (!res && mouseClickPos.has_value()) {
+                    POINT nativeLocalPos = mouseClickPos.value();
+                    ::ScreenToClient(hWnd, &nativeLocalPos);
+                    QPoint qtScenePos = QHighDpi::fromNativeLocalPosition(
+                        point2qpoint(nativeLocalPos), m_windowHandle.data());
+                    WindowAgentBase::SystemButton sysButtonType = WindowAgentBase::Unknown;
+                    if (isInSystemButtons(qtScenePos, &sysButtonType) &&
+                        sysButtonType == WindowAgentBase::WindowIcon) {
+                        iconButtonClickLevel |= IconButtonClicked;
+                        if (::GetTickCount64() - iconButtonClickTime <= ::GetDoubleClickTime()) {
+                            iconButtonClickLevel |= IconButtonTriggersClose;
+                        }
+                    }
+                }
+
+                if (mouseDoubleClicked) {
+                    iconButtonClickLevel |= IconButtonDoubleClicked;
+                }
+
+                mouseHook = nullptr;
+                mouseClickPos.reset();
+                mouseDoubleClicked = false;
+            }
+
             // QPA's internal code will handle system menu events separately, and its
             // behavior is not what we would want to see because it doesn't know our
             // window doesn't have any window frame now, so return early here to avoid
